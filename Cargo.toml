@@ -1,0 +1,21 @@
+[package]
+name = "schematize-updater"
+version = "0.1.0"
+edition = "2021"
+description = "Bootstrapper/gestor de versão do ecossistema schematize — instala e atualiza o app (CLI + GUI) na máquina do usuário, cross-OS (Linux/macOS/Windows), híbrido (binário pronto se houver, senão compila do fonte). Desacoplado do app: um updater quebrado não trava o app e vice-versa."
+license = "MIT"
+
+# ZERO dependências de propósito: só std. Assim cross-compila e vira musl-static sem dor —
+# o updater é o ÚNICO artefato que publicamos pré-compilado por SO, então tem que ser leve e
+# portável. Rede/gestão de toolchain é tudo via shell-out (curl/powershell/rustup/cargo/git).
+[dependencies]
+
+[[bin]]
+name = "schematize-updater"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"   # tamanho: o updater é pequeno de propósito
+lto = true
+strip = true
+panic = "abort"

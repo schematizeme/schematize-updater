@@ -1,0 +1,49 @@
+name: release-updater
+
+# Compila o schematize-updater para Linux/macOS/Windows e anexa os binários ao release.
+# Roda SÓ quando o PRÓPRIO updater muda (push de tag `v*`) — é o único artefato que publicamos
+# pré-compilado por SO, de propósito pequeno e estável. O app NÃO passa por aqui.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: schematize-updater-linux-x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: schematize-updater-macos-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset: schematize-updater-macos-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: schematize-updater-windows-x86_64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: rustup target add ${{ matrix.target }}
+      - name: Build (release)
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Rename asset (unix)
+        if: runner.os != 'Windows'
+        run: cp target/${{ matrix.target }}/release/schematize-updater ${{ matrix.asset }}
+      - name: Rename asset (windows)
+        if: runner.os == 'Windows'
+        run: copy target\${{ matrix.target }}\release\schematize-updater.exe ${{ matrix.asset }}
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}
