@@ -40,8 +40,11 @@ schematize-updater version             # versão do próprio updater
 1. Resolve a **versão-alvo** (pin, ou o `version` do `Cargo.toml` no `main` do app — sem API 60/h).
 2. **Binário**: baixa o asset da plataforma do release do app; **verifica que executa** aqui
    (`--version`) — protege contra binário de glibc/arch incompatível que brickaria a troca.
-3. Se não há binário compatível → **fonte**: garante rustup + libs de build do SO e roda
-   `cargo install --git` dos repos `schematize-cli` (CLI) e `schematize_gui_slint` (GUI).
+3. Se não há binário compatível → **fonte INCREMENTAL**: garante rustup + libs de build do SO,
+   mantém um checkout persistente por repo (`~/.schematize/updater/build/`) e roda `git fetch` +
+   `cargo build --release` — reaproveita o `target/`, então só o que mudou recompila (as deps
+   pesadas tipo Slint ficam cacheadas; update vira segundos, não minutos). Copia o binário pro
+   `~/.cargo/bin`. NÃO usa `cargo install --force` (que jogava fora o cache toda vez).
 
 ## Build local
 

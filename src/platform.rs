@@ -85,6 +85,15 @@ pub fn state_dir() -> PathBuf {
     home().join(".schematize").join("updater")
 }
 
+/// Dir de BUILD PERSISTENTE de um repo — `~/.schematize/updater/build/<repo>`. Mantido entre
+/// updates de propósito: o checkout + o `target/` ficam cacheados, então o próximo update é
+/// INCREMENTAL (só o que mudou recompila; as deps pesadas tipo Slint não recompilam). Troca
+/// tempo de build (minutos→segundos) por disco — o que o usuário quer.
+pub fn build_src_dir(repo: &str) -> PathBuf {
+    let name = repo.rsplit('/').next().unwrap_or(repo);
+    state_dir().join("build").join(name)
+}
+
 /// Sufixo de executável (".exe" no Windows).
 pub fn exe_suffix() -> &'static str {
     if os() == Os::Windows {
