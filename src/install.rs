@@ -98,22 +98,62 @@ fn build_from_source() -> Result<(), String> {
     let dir = platform::install_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    // CLI (schematize) — repo schematize-cli, crate na raiz, feature `gui` (paridade com install.sh).
-    build_one(cargo_s, platform::APP_REPO, &["--features", "gui"], &cli_name, &dir.join(&cli_name))?;
-    // GUI (schematize-gui) — repo schematize_gui_slint (Slint), crate na raiz.
-    build_one(cargo_s, platform::GUI_REPO, &[], &gui_name, &dir.join(&gui_name))?;
+    // CLI (schematize) — repo schematize-cli, crate na raiz. SEM `--features gui`: a única GUI é o
+    // Slint (repo próprio, build abaixo); a feature `gui` puxava o egui e ressuscitava o layout velho.
+    build_one(cargo_s, platform::APP_REPO, &[], None, &cli_name, &dir.join(&cli_name))?;
+    // GUI (schematize-gui) — repo schematize_gui_slint (Slint), crate na raiz. A GUI depende do crate
+    // `schematize` como git-dep (branch=main); o `Cargo.lock` commitado FIXA um commit, e o build só
+    // recompila — sem avançar o dep. Resultado: a GUI embutia uma versão VELHA (`app_version()` =
+    // CARGO_PKG_VERSION do schematize no commit pinado) mesmo com o CLI já novo. `cargo update -p
+    // schematize` avança o git-dep pro HEAD do main ANTES de compilar → a versão embutida bate.
+    build_one(cargo_s, platform::GUI_REPO, &[], Some("schematize"), &gui_name, &dir.join(&gui_name))?;
+    // Encerra qualquer GUI ANTIGA ainda aberta: só fechar a janela não bastava (o processo velho
+    // seguia vivo e o relaunch reusava a versão anterior). Mata pra o próximo open pegar a nova.
+    kill_stale_gui(&gui_name);
     Ok(())
+}
+
+/// Encerra processos da GUI já rodando (por NOME exato do binário) após trocar o executável, pra que
+/// a próxima abertura use a versão recém-instalada — o usuário reclamava de "atualizei mas abre a
+/// versão antiga" porque fechar a janela não matava o processo. Best-effort e cross-OS; nunca falha
+/// o update. NÃO casa o próprio updater (`schematize-updater`) nem o CLI — só o binário exato da GUI.
+fn kill_stale_gui(gui_name: &str) {
+    #[cfg(windows)]
+    {
+        let _ = sh::capture("taskkill", &["/F", "/IM", &format!("{gui_name}.exe")]);
+    }
+    #[cfg(not(windows))]
+    {
+        // -x = nome exato do processo (não casa paths/cmdline tipo `schematize_gui_slint`).
+        let _ = sh::capture("pkill", &["-x", gui_name]);
+    }
 }
 
 /// Sincroniza o checkout persistente de `repo` (git fetch+reset se já existe; clone se não) e
 /// compila `cargo build --release` (incremental) nele, copiando o binário `binname` pro `dst`.
-fn build_one(cargo: &str, repo: &str, extra: &[&str], binname: &str, dst: &Path) -> Result<(), String> {
+fn build_one(
+    cargo: &str,
+    repo: &str,
+    extra: &[&str],
+    refresh_dep: Option<&str>,
+    binname: &str,
+    dst: &Path,
+) -> Result<(), String> {
     let src = platform::build_src_dir(repo);
     sync_checkout(repo, &src)?;
-    println!("→ compilando {binname} (incremental — só o que mudou recompila)…");
 
     let manifest = src.join("Cargo.toml");
     let manifest_s = manifest.to_string_lossy().to_string();
+
+    // Avança um git-dep pro HEAD do branch ANTES de compilar (o `Cargo.lock` commitado o pina num
+    // commit antigo, e `git reset --hard` restaura esse lock a cada update). Best-effort: se a rede
+    // cair, segue com o lock existente (offline ainda compila). Sem isto, a versão embutida trava.
+    if let Some(dep) = refresh_dep {
+        println!("→ atualizando dep `{dep}` pro HEAD do main (evita versão embutida velha)…");
+        let _ = sh::run_inherit(cargo, &["update", "--manifest-path", &manifest_s, "-p", dep]);
+    }
+
+    println!("→ compilando {binname} (incremental — só o que mudou recompila)…");
     let mut args: Vec<String> =
         vec!["build".into(), "--release".into(), "--manifest-path".into(), manifest_s];
     for e in extra {
