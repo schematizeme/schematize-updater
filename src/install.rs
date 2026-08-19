@@ -110,6 +110,14 @@ fn build_from_source() -> Result<(), String> {
     // Encerra qualquer GUI ANTIGA ainda aberta: só fechar a janela não bastava (o processo velho
     // seguia vivo e o relaunch reusava a versão anterior). Mata pra o próximo open pegar a nova.
     kill_stale_gui(&gui_name);
+
+    // GUI do updater (janela amigável do próprio gestor) — OPCIONAL: se o build falhar, o update NÃO
+    // falha (o updater headless e o app já estão instalados; é só chrome). Não depende do crate
+    // `schematize`, então sem `refresh_dep`.
+    let ugui = platform::updater_gui_bin();
+    if let Err(e) = build_one(cargo_s, platform::UPDATER_GUI_REPO, &[], None, &ugui, &dir.join(&ugui)) {
+        println!("aviso: build da GUI do updater falhou (opcional, seguindo): {e}");
+    }
     Ok(())
 }
 

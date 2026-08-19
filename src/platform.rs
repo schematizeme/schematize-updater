@@ -10,6 +10,8 @@ use std::path::PathBuf;
 /// Org/repos do app (o updater é desacoplado, mas sabe de ONDE puxar o app).
 pub const APP_REPO: &str = "schematizeme/schematize-cli";
 pub const GUI_REPO: &str = "schematizeme/schematize_gui_slint";
+/// Janela (Slint) do próprio gestor de atualizações — OPCIONAL (chrome); build best-effort.
+pub const UPDATER_GUI_REPO: &str = "schematizeme/schematize-updater-gui";
 
 /// Sistema operacional em execução. (Variantes "não construídas" no target atual são normais —
 /// o `os()` só constrói a do SO compilado; as outras existem pro código cross-OS.)
@@ -107,6 +109,11 @@ pub fn exe_suffix() -> &'static str {
 pub fn bin_names() -> (String, String) {
     let s = exe_suffix();
     (format!("schematize{s}"), format!("schematize-gui{s}"))
+}
+
+/// Nome do binário da GUI do updater (com sufixo `.exe` no Windows).
+pub fn updater_gui_bin() -> String {
+    format!("schematize-updater-gui{}", exe_suffix())
 }
 
 /// Nomes dos ASSETS pré-compilados no release (batem com selfupdate.rs do app). `None` se a
