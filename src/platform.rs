@@ -362,14 +362,33 @@ pub fn make_launcher() {
     }
     let apps = home().join(".local/share/applications");
     let _ = std::fs::create_dir_all(&apps);
+
+    // Gera o ícone em TODOS os tamanhos A PARTIR DO CÓDIGO (via o CLI `schematize icon`), pra o
+    // Icon= abaixo resolver. RESILIENTE: o updater roda make_launcher em TODO update; antes ele
+    // regravava o .desktop SEM Icon= e o dock (Wayland) perdia o ícone. Best-effort.
+    let icons_dir = home().join(".local/share/icons/hicolor");
+    let szbin = install_dir().join("schematize");
+    let icon_png = icons_dir.join("256x256").join("apps").join("schematize.png");
+    let _ = sh::capture(
+        szbin.to_str().unwrap_or("schematize"),
+        &["icon", "--hicolor", icons_dir.to_str().unwrap_or_default()],
+    );
+    // Icon= com caminho ABSOLUTO do 256px (à prova de cache/tema); se o png não saiu, cai pro nome.
+    let icon = if icon_png.is_file() {
+        icon_png.display().to_string()
+    } else {
+        "schematize".to_string()
+    };
     let desktop = format!(
         "[Desktop Entry]\nType=Application\nName=schematize\nGenericName=Ecossistema schematize\n\
-         Comment=Skills, overdev e mais — schematize\nExec={}\nTerminal=false\n\
-         Categories=Development;Utility;\nKeywords=schematize;skills;overdev;claude;\n",
+         Comment=Skills, overdev e mais — schematize\nExec={}\nIcon={icon}\nTerminal=false\n\
+         Categories=Development;Utility;\nKeywords=schematize;skills;overdev;claude;\n\
+         StartupWMClass=schematize-gui\n",
         guibin.display()
     );
     let _ = std::fs::write(apps.join("schematize-gui.desktop"), desktop);
     let _ = sh::run_inherit("update-desktop-database", &[apps.to_str().unwrap_or_default()]);
+    let _ = sh::capture("gtk-update-icon-cache", &["-f", "-t", icons_dir.to_str().unwrap_or_default()]);
 }
 
 // (helpers cross-OS abaixo)
