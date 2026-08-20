@@ -3,7 +3,7 @@
 //! do fonte na máquina do usuário (rustup + deps + cargo install do git). Cross-OS.
 //! O quê: `install_or_update`. Onde: chamado por main.rs (install/update).
 
-use crate::{fetch, platform, sh, version};
+use crate::{fetch, platform, purga, sh, version};
 use std::path::Path;
 
 /// Instala (1ª vez) ou atualiza o app. `force` reinstala mesmo já estando na versão-alvo.
@@ -93,10 +93,26 @@ fn try_binary(target: &str, cli_asset: &str, gui_asset: &str) -> Result<bool, St
 fn build_from_source() -> Result<(), String> {
     let cargo = platform::ensure_toolchain()?;
     platform::ensure_build_deps()?;
+
     let cargo_s = cargo.to_str().unwrap_or("cargo");
     let (cli_name, gui_name) = platform::bin_names();
     let dir = platform::install_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    // PURGA das cópias-FANTASMA antes de instalar. Não é zelo: é o conserto do
+    // "atualizei e voltou pra uma versão antiga". O binário podia estar em quatro
+    // lugares e o PATH resolvia pro errado; instalar por cima de UM deles não desfaz
+    // isso. O diretório de destino não é varrido — lá a troca é por rename, então um
+    // build que falhe no meio não deixa a máquina sem app. Ver `purga.rs`.
+    let manter: Vec<std::path::PathBuf> = std::env::current_exe().ok().into_iter().collect();
+    let (removidos, resistiram) = purga::remove_copias_fantasma(&dir, &manter);
+    for p in &removidos {
+        println!("→ removida instalação anterior: {}", p.display());
+    }
+    for p in &resistiram {
+        println!("aviso: não consegui remover {} (permissão?) — se o `schematize` continuar", p.display());
+        println!("       abrindo uma versão velha, apague este arquivo à mão.");
+    }
 
     // SQLite: se a distro tem a lib de desenvolvimento, LINKA a dela em vez de compilar
     // ~250 mil linhas de C a cada build limpo. Mesma escolha que o install.sh faz.
@@ -368,4 +384,72 @@ fn place(src: &Path, dst: &Path) -> Result<(), String> {
     // grava ao lado do destino e renomeia por cima. NUNCA `fs::copy` direto no destino —
     // é o que dava `Text file busy` com o agente rodando.
     substitui_binario(src, dst)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// REGRESSÃO: trocar um binário que está EM EXECUÇÃO.
+    ///
+    /// Foi o bug que escapou duas vezes (Linux Mint e openSUSE): o update compilava
+    /// tudo e morria no último passo com `Text file busy` (ETXTBSY), porque o
+    /// `schematize` está sempre rodando — o agente do autostart. Escrever no destino
+    /// falha; renomear por cima, não. Este teste monta exatamente esse cenário.
+    #[cfg(unix)]
+    #[test]
+    fn substitui_binario_em_execucao() {
+        use std::process::{Command, Stdio};
+
+        let base = std::env::temp_dir().join(format!("upd-busy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let alvo = base.join("emuso");
+
+        // Um executável de verdade no lugar do destino, e um processo RODANDO ele.
+        std::fs::copy("/bin/sleep", &alvo).unwrap();
+        make_executable(&alvo);
+        let mut filho = Command::new(&alvo)
+            .arg("30")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("não consegui rodar o binário de teste");
+
+        // O jeito ANTIGO (escrever no destino) tem de falhar — é o bug.
+        let erro = std::fs::copy("/bin/true", &alvo).unwrap_err();
+        assert_eq!(
+            erro.raw_os_error(),
+            Some(26),
+            "esperava ETXTBSY (26) ao escrever num binário em execução, veio {erro:?}"
+        );
+
+        // O jeito NOVO (gravar ao lado + renomear) tem de passar, com o processo vivo.
+        substitui_binario(Path::new("/bin/true"), &alvo).expect("substituição devia funcionar");
+        assert!(filho.try_wait().unwrap().is_none(), "o processo antigo tem de seguir vivo");
+
+        // E o destino agora é o binário NOVO (o `true` sai com 0 na hora; o `sleep` não).
+        let st = Command::new(&alvo).status().unwrap();
+        assert!(st.success());
+
+        let _ = filho.kill();
+        let _ = filho.wait();
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// O temporário fica NO MESMO diretório do destino: rename entre sistemas de
+    /// arquivos diferentes falha com EXDEV, e é o rename que precisa funcionar.
+    #[cfg(unix)]
+    #[test]
+    fn temporario_fica_no_diretorio_do_destino() {
+        let base = std::env::temp_dir().join(format!("upd-tmpdir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let alvo = base.join("bin");
+        substitui_binario(Path::new("/bin/true"), &alvo).unwrap();
+        assert!(alvo.is_file());
+        // não deixou lixo pra trás
+        assert!(!base.join("bin.novo").exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

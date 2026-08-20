@@ -8,6 +8,7 @@
 mod fetch;
 mod install;
 mod platform;
+mod purga;
 mod sh;
 mod version;
 
