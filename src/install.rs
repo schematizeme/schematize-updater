@@ -128,7 +128,68 @@ fn build_from_source() -> Result<(), String> {
     if let Err(e) = build_one(cargo_s, platform::UPDATER_GUI_REPO, &[], None, &ugui, &dir.join(&ugui)) {
         println!("aviso: build da GUI do updater falhou (opcional, seguindo): {e}");
     }
+
+    // Só agora, com os binários no lugar: joga fora os `target/` por-repo da versão
+    // anterior (ver `limpa_targets_antigos`).
+    limpa_targets_antigos();
     Ok(())
+}
+
+/// Remove os `target/` por-repo que existiam ANTES do target compartilhado.
+///
+/// Quem já tinha o app instalado carrega um `target/` dentro de cada checkout — dezenas
+/// de GB de artefato que nenhum build volta a ler depois desta versão. Deixar isso pro
+/// usuário descobrir e apagar à mão é o oposto do piso da casa: o script mudou o layout,
+/// o script limpa. Nunca antes do build: se ele falhar, o cache antigo continua lá.
+///
+/// Só toca em caminhos que ESTE programa criou (`build_src_dir(repo)/target`) — nada de
+/// varrer diretório por padrão. Falhar aqui não é erro: é só disco que sobrou.
+fn limpa_targets_antigos() {
+    let repos = [platform::APP_REPO, platform::GUI_REPO, platform::UPDATER_GUI_REPO];
+    let mut liberado: u64 = 0;
+    for repo in repos {
+        let antigo = platform::build_src_dir(repo).join("target");
+        if !antigo.is_dir() {
+            continue;
+        }
+        let tamanho = tamanho_de(&antigo);
+        if std::fs::remove_dir_all(&antigo).is_ok() {
+            liberado += tamanho;
+        }
+    }
+    if liberado > 0 {
+        println!("→ liberados {} de `target/` antigo (agora há um só, compartilhado).", legivel(liberado));
+    }
+}
+
+/// Soma o tamanho dos arquivos de uma árvore. Best-effort: o que não der pra ler conta 0
+/// (é só pra imprimir "liberados X GB", não uma contabilidade).
+fn tamanho_de(dir: &Path) -> u64 {
+    let mut total = 0u64;
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    for e in rd.flatten() {
+        match e.metadata() {
+            Ok(m) if m.is_dir() => total += tamanho_de(&e.path()),
+            Ok(m) => total += m.len(),
+            Err(_) => {}
+        }
+    }
+    total
+}
+
+/// Bytes em unidade legível (uma casa decimal a partir de MB).
+fn legivel(bytes: u64) -> String {
+    const GB: u64 = 1024 * 1024 * 1024;
+    const MB: u64 = 1024 * 1024;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 /// Encerra processos da GUI já rodando (por NOME exato do binário) após trocar o executável, pra que
