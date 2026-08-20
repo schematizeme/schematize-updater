@@ -56,7 +56,9 @@ fn try_binary(target: &str, cli_asset: &str, gui_asset: &str) -> Result<bool, St
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
 
-    let (cli_name, gui_name) = platform::bin_names();
+    // Nomes CANÔNICOS como alvo: instalar é o caso em que se quer o nome novo, não o
+    // que já está no disco. O nome anterior vem depois, por espelho.
+    let (cli_name, gui_name) = platform::bin_names_novos();
     let cli_tmp = tmp.join(&cli_name);
     let gui_tmp = tmp.join(&gui_name);
 
@@ -78,8 +80,10 @@ fn try_binary(target: &str, cli_asset: &str, gui_asset: &str) -> Result<bool, St
     let dir = platform::install_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     place(&cli_tmp, &dir.join(&cli_name))?;
+    espelha_nome_anterior(&dir, &cli_name, &platform::bin_names_anteriores().0);
     if has_gui {
         let _ = place(&gui_tmp, &dir.join(&gui_name));
+        espelha_nome_anterior(&dir, &gui_name, &platform::bin_names_anteriores().1);
     }
     let _ = std::fs::remove_dir_all(&tmp);
     println!("→ instalado do binário pré-compilado v{target}.");
@@ -95,7 +99,8 @@ fn build_from_source() -> Result<(), String> {
     platform::ensure_build_deps()?;
 
     let cargo_s = cargo.to_str().unwrap_or("cargo");
-    let (cli_name, gui_name) = platform::bin_names();
+    let (cli_name, gui_name) = platform::bin_names_novos();
+    let (cli_antigo, gui_antigo) = platform::bin_names_anteriores();
     let dir = platform::install_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
@@ -127,15 +132,20 @@ fn build_from_source() -> Result<(), String> {
     // CLI (schematize) — repo schematize-cli, crate na raiz. A GUI egui não existe mais
     // neste crate: a única janela é a Slint (repo próprio, build abaixo).
     build_one(cargo_s, platform::APP_REPO, feats, None, &cli_name, &dir.join(&cli_name))?;
+    espelha_nome_anterior(&dir, &cli_name, &cli_antigo);
     // GUI (schematize-gui) — repo schematize_gui_slint (Slint), crate na raiz. A GUI depende do crate
     // `schematize` como git-dep (branch=main); o `Cargo.lock` commitado FIXA um commit, e o build só
     // recompila — sem avançar o dep. Resultado: a GUI embutia uma versão VELHA (`app_version()` =
     // CARGO_PKG_VERSION do schematize no commit pinado) mesmo com o CLI já novo. `cargo update -p
     // schematize` avança o git-dep pro HEAD do main ANTES de compilar → a versão embutida bate.
     build_one(cargo_s, platform::GUI_REPO, feats, Some("schematize"), &gui_name, &dir.join(&gui_name))?;
+    espelha_nome_anterior(&dir, &gui_name, &gui_antigo);
     // Encerra qualquer GUI ANTIGA ainda aberta: só fechar a janela não bastava (o processo velho
     // seguia vivo e o relaunch reusava a versão anterior). Mata pra o próximo open pegar a nova.
+    // Mata a GUI antiga com QUALQUER um dos nomes — o processo em execução pode ter
+    // subido pelo lançador anterior, e um relaunch reusaria a versão velha.
     kill_stale_gui(&gui_name);
+    kill_stale_gui(&gui_antigo);
 
     // GUI do updater (janela amigável do próprio gestor) — OPCIONAL: se o build falhar, o update NÃO
     // falha (o updater headless e o app já estão instalados; é só chrome). Não depende do crate
@@ -306,6 +316,24 @@ fn sync_checkout(repo: &str, src: &Path) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     sh::run_inherit("git", &["clone", "--depth", "1", &url, &src_s])
+}
+
+/// Espelha o binário recém-instalado sob o nome ANTERIOR ao rebranding.
+///
+/// O app virou Overflow, mas `schematize` não foi aposentado: hook, script e dedo
+/// acostumado continuam apontando pra ele. Instalar só o nome novo deixaria essas
+/// máquinas com um binário parado na versão antiga — pior que não renomear nada.
+///
+/// Espelha a partir do ALVO já instalado, não do `src`: o `place` pode ter consumido
+/// o `src` num rename.
+fn espelha_nome_anterior(dir: &Path, novo: &str, anterior: &str) {
+    let de = dir.join(novo);
+    if !de.is_file() {
+        return;
+    }
+    if let Err(e) = substitui_binario(&de, &dir.join(anterior)) {
+        println!("aviso: não consegui manter o nome `{anterior}` funcionando: {e}");
+    }
 }
 
 /// Copia `src`→`dst` (não move — preserva o artefato de build pro incremental) + chmod.

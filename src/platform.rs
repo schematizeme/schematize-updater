@@ -132,10 +132,36 @@ pub fn exe_suffix() -> &'static str {
     }
 }
 
-/// Nomes dos binários instalados: (cli, gui) — com `.exe` no Windows.
-pub fn bin_names() -> (String, String) {
+/// Nomes canônicos dos binários do app: (cli, gui). É assim que uma instalação
+/// NOVA nomeia — o app se chama Overflow.
+pub fn bin_names_novos() -> (String, String) {
+    let s = exe_suffix();
+    (format!("overflow{s}"), format!("overflow-gui{s}"))
+}
+
+/// Nomes ANTERIORES ao rebranding. Não foram aposentados: seguem instalados em
+/// máquina que não atualizou, e `schematize` vai virar outro produto.
+pub fn bin_names_anteriores() -> (String, String) {
     let s = exe_suffix();
     (format!("schematize{s}"), format!("schematize-gui{s}"))
+}
+
+/// O par EM USO nesta máquina: o novo se estiver instalado, senão o anterior.
+///
+/// Quem pergunta "qual é o binário?" quase sempre quer o que existe pra ser
+/// executado ou inspecionado — não um nome canônico que talvez não esteja no disco.
+/// Instalar é o caso oposto e grava os DOIS pares.
+pub fn bin_names() -> (String, String) {
+    let novos = bin_names_novos();
+    let d = install_dir();
+    if d.join(&novos.0).is_file() || d.join(&novos.1).is_file() {
+        return novos;
+    }
+    let antigos = bin_names_anteriores();
+    if d.join(&antigos.0).is_file() || d.join(&antigos.1).is_file() {
+        return antigos;
+    }
+    novos
 }
 
 /// Nome do binário da GUI do updater (com sufixo `.exe` no Windows).
@@ -399,10 +425,10 @@ pub fn make_launcher() {
     // Icon= abaixo resolver. RESILIENTE: o updater roda make_launcher em TODO update; antes ele
     // regravava o .desktop SEM Icon= e o dock (Wayland) perdia o ícone. Best-effort.
     let icons_dir = home().join(".local/share/icons/hicolor");
-    let szbin = install_dir().join("schematize");
+    let szbin = install_dir().join(bin_names().0);
     let icon_png = icons_dir.join("256x256").join("apps").join("schematize.png");
     let _ = sh::capture(
-        szbin.to_str().unwrap_or("schematize"),
+        szbin.to_str().unwrap_or("overflow"),
         &["icon", "--hicolor", icons_dir.to_str().unwrap_or_default()],
     );
     // Icon= com caminho ABSOLUTO do 256px (à prova de cache/tema); se o png não saiu, cai pro nome.
@@ -411,14 +437,26 @@ pub fn make_launcher() {
     } else {
         "schematize".to_string()
     };
+    // O lançador acompanha o binário EM USO: o `StartupWMClass` tem de bater com o
+    // app_id que aquele binário anuncia (ele o deriva do próprio nome), senão o dock
+    // não casa a janela com o ícone. Como os dois nomes coexistem, o .desktop também
+    // tem de ser o do nome certo — não um fixo.
+    let e_novo = gui == bin_names_novos().1;
+    let (arquivo, nome) = if e_novo { ("overflow-gui.desktop", "Overflow") } else { ("schematize-gui.desktop", "schematize") };
     let desktop = format!(
-        "[Desktop Entry]\nType=Application\nName=schematize\nGenericName=Ecossistema schematize\n\
-         Comment=Skills, overdev e mais — schematize\nExec={}\nIcon={icon}\nTerminal=false\n\
-         Categories=Development;Utility;\nKeywords=schematize;skills;overdev;claude;\n\
-         StartupWMClass=schematize-gui\n",
+        "[Desktop Entry]\nType=Application\nName={nome}\nGenericName=Skills, overdev e mais\n\
+         Comment=Skills, overdev e mais — {nome}\nExec={}\nIcon={icon}\nTerminal=false\n\
+         Categories=Development;Utility;\nKeywords=overflow;schematize;skills;overdev;claude;\n\
+         StartupWMClass={gui}\n",
         guibin.display()
     );
-    let _ = std::fs::write(apps.join("schematize-gui.desktop"), desktop);
+    let _ = std::fs::write(apps.join(arquivo), desktop);
+    // Um app, uma entrada no menu. Ao passar pro nome novo, o lançador antigo que NÓS
+    // escrevemos sai — senão sobram duas entradas idênticas e o usuário não sabe qual
+    // abrir. Só o do dir do usuário: o de /usr/share é do pacote, não é nosso.
+    if e_novo {
+        let _ = std::fs::remove_file(apps.join("schematize-gui.desktop"));
+    }
     let _ = sh::run_inherit("update-desktop-database", &[apps.to_str().unwrap_or_default()]);
     let _ = sh::capture("gtk-update-icon-cache", &["-f", "-t", icons_dir.to_str().unwrap_or_default()]);
 }

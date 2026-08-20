@@ -34,11 +34,12 @@ pub fn parse_cargo_version(toml: &str) -> Option<String> {
     None
 }
 
-/// Versão do app INSTALADO (`schematize --version` → "schematize X.Y.Z" → "X.Y.Z"). `None` se não instalado.
+/// Versão do app INSTALADO (`<bin> --version` → "<nome> X.Y.Z" → "X.Y.Z"). `None` se não instalado.
+/// Pega o ÚLTIMO token e exige que comece com dígito — por isso sobreviveu à troca de nome.
 pub fn installed_app_version() -> Option<String> {
     let bin = platform::app_bin(false);
     let out = sh::capture(bin.to_str().unwrap_or("schematize"), &["--version"])?;
-    // formato "schematize 0.34.1"
+    // formato "overflow 0.45.0" (ou "schematize 0.44.1" numa instalação anterior)
     out.split_whitespace().last().map(|s| s.to_string()).filter(|s| {
         s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
     })

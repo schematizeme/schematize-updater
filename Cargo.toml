@@ -1,6 +1,6 @@
 [package]
 name = "schematize-updater"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Bootstrapper/gestor de versão do ecossistema schematize — instala e atualiza o app (CLI + GUI) na máquina do usuário, cross-OS (Linux/macOS/Windows), híbrido (binário pronto se houver, senão compila do fonte). Desacoplado do app: um updater quebrado não trava o app e vice-versa."
 license = "MIT"
@@ -9,6 +9,12 @@ license = "MIT"
 # o updater é o ÚNICO artefato que publicamos pré-compilado por SO, então tem que ser leve e
 # portável. Rede/gestão de toolchain é tudo via shell-out (curl/powershell/rustup/cargo/git).
 [dependencies]
+
+# Dois binários da mesma fonte — mesma razão do CLI e da GUI: o app virou Overflow
+# e o nome anterior segue funcionando pra não quebrar quem já tinha.
+[[bin]]
+name = "overflow-updater"
+path = "src/main.rs"
 
 [[bin]]
 name = "schematize-updater"

@@ -14,7 +14,7 @@
 //! Atualizar não conserta isso, porque o problema não é a versão — é a ambiguidade.
 //!
 //! O que NÃO é tocado: dependências do sistema e DADOS do usuário (`~/.claude`,
-//! `~/.schematize`). Purga instalação, não o trabalho de ninguém. E nunca o binário
+//! `~/.schematize`, `~/.overflow`). Purga instalação, não o trabalho de ninguém. E nunca o binário
 //! que está EM EXECUÇÃO agora (este) — quem o substitui é o `substitui_binario`.
 
 use crate::platform;
@@ -23,7 +23,13 @@ use std::path::{Path, PathBuf};
 /// Os binários da casa. Nomes exatos — nada de padrão/glob em `rm`.
 fn nomes() -> Vec<String> {
     let sfx = platform::exe_suffix();
-    ["schematize", "schematize-gui", "schematize-updater", "schematize-updater-gui"]
+    [
+        // nomes novos (Overflow) e os anteriores — a purga tem de reconhecer os dois,
+        // senão uma cópia-fantasma com o nome antigo sobrevive num dir de maior
+        // precedência no PATH e o app "volta" pra uma versão velha. Foi esse o bug.
+        "overflow", "overflow-gui", "overflow-updater", "overflow-updater-gui",
+        "schematize", "schematize-gui", "schematize-updater", "schematize-updater-gui",
+    ]
         .iter()
         .map(|b| format!("{b}{sfx}"))
         .collect()
@@ -101,11 +107,17 @@ mod tests {
     use super::*;
 
     /// A lista de nomes é EXATA — nada de padrão que possa varrer vizinho.
+    ///
+    /// São os QUATRO binários da casa em DOIS nomes cada (Overflow e o anterior):
+    /// a purga tem de reconhecer os dois, senão uma cópia-fantasma com o nome antigo
+    /// sobrevive num dir de maior precedência no PATH e o app "volta" pra uma versão
+    /// velha — que é exatamente o bug que esta purga existe pra matar.
     #[test]
     fn so_nomes_exatos_da_casa() {
         let n = nomes();
-        assert_eq!(n.len(), 4);
-        assert!(n.iter().all(|x| x.starts_with("schematize")));
+        assert_eq!(n.len(), 8, "4 binários x 2 nomes");
+        assert_eq!(n.iter().filter(|x| x.starts_with("overflow")).count(), 4);
+        assert_eq!(n.iter().filter(|x| x.starts_with("schematize")).count(), 4);
         assert!(n.iter().all(|x| !x.contains('*') && !x.contains('?')));
     }
 
