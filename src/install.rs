@@ -129,6 +129,25 @@ fn build_from_source() -> Result<(), String> {
         println!("aviso: build da GUI do updater falhou (opcional, seguindo): {e}");
     }
 
+    // O PRÓPRIO updater, POR ÚLTIMO.
+    //
+    // Ele era o único componente que ninguém atualizava: reconstruía o CLI, a GUI e a
+    // GUI do updater, e ficava parado na última tag publicada. Resultado prático: uma
+    // correção NELE (por exemplo, a de trocar binário em execução) não chegava em
+    // máquina nenhuma pelo caminho normal — o gestor de atualizações era o único que
+    // não recebia atualização.
+    //
+    // Trocar o binário de um processo EM EXECUÇÃO — este aqui — funciona porque
+    // `substitui_binario` renomeia por cima em vez de escrever no arquivo: este
+    // processo segue no inode antigo até terminar, e a próxima execução já é a nova.
+    //
+    // Por último de propósito: se falhar, o app já está atualizado (que é o que o
+    // usuário pediu); e por isso também é `aviso`, não erro.
+    let eu = platform::updater_bin_name();
+    if let Err(e) = build_one(cargo_s, platform::UPDATER_REPO, &[], None, &eu, &dir.join(&eu)) {
+        println!("aviso: não consegui me atualizar ({e}) — o app está atualizado; tento de novo no próximo update.");
+    }
+
     // Só agora, com os binários no lugar: joga fora os `target/` por-repo da versão
     // anterior (ver `limpa_targets_antigos`).
     limpa_targets_antigos();

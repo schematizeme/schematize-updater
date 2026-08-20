@@ -11,6 +11,10 @@ use std::path::PathBuf;
 pub const APP_REPO: &str = "schematizeme/schematize-cli";
 pub const GUI_REPO: &str = "schematizeme/schematize_gui_slint";
 /// Janela (Slint) do próprio gestor de atualizações — OPCIONAL (chrome); build best-effort.
+/// O repo DESTE programa. O updater precisa saber se reconstruir: ele é o único
+/// componente que ninguém mais atualiza — se ficar parado na última tag publicada,
+/// qualquer correção nele (inclusive nas de atualizar) nunca chega em máquina nenhuma.
+pub const UPDATER_REPO: &str = "schematizeme/schematize-updater";
 pub const UPDATER_GUI_REPO: &str = "schematizeme/schematize-updater-gui";
 
 /// Sistema operacional em execução. (Variantes "não construídas" no target atual são normais —
@@ -137,6 +141,11 @@ pub fn bin_names() -> (String, String) {
 /// Nome do binário da GUI do updater (com sufixo `.exe` no Windows).
 pub fn updater_gui_bin() -> String {
     format!("schematize-updater-gui{}", exe_suffix())
+}
+
+/// Nome do binário DESTE programa (com `.exe` no Windows).
+pub fn updater_bin_name() -> String {
+    format!("schematize-updater{}", exe_suffix())
 }
 
 /// Nomes dos ASSETS pré-compilados no release (batem com selfupdate.rs do app). `None` se a
