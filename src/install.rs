@@ -276,14 +276,44 @@ fn sync_checkout(repo: &str, src: &Path) -> Result<(), String> {
 /// Copia `src`→`dst` (não move — preserva o artefato de build pro incremental) + chmod.
 /// No Windows aposenta o `.exe` em uso como `.old` antes de sobrescrever.
 fn copy_bin(src: &Path, dst: &Path) -> Result<(), String> {
+    substitui_binario(src, dst)
+}
+
+/// Troca um binário que pode estar EM EXECUÇÃO, sem matar ninguém.
+///
+/// O erro que isto conserta: `Text file busy` (ETXTBSY). No Linux não dá pra abrir
+/// pra escrita um arquivo que está sendo executado — e o `schematize` está: o agente
+/// do autostart roda o tempo todo. Então `fs::copy` direto no destino falhava no meio
+/// do update, depois de já ter compilado tudo.
+///
+/// A saída é a do Unix: gravar um arquivo NOVO ao lado (mesmo diretório, pra o rename
+/// ser atômico e no mesmo sistema de arquivos) e `rename(2)` por cima. Renomear sobre
+/// um executável em uso é permitido: quem já está rodando continua no inode antigo, e
+/// a próxima execução pega o novo. Nada de pedir pro usuário fechar o app.
+///
+/// No Windows não existe esse truque (o arquivo fica travado), então lá seguimos
+/// aposentando o antigo como `.old` antes de gravar.
+fn substitui_binario(src: &Path, dst: &Path) -> Result<(), String> {
     #[cfg(windows)]
     if dst.exists() {
         let old = dst.with_extension("old");
         let _ = std::fs::remove_file(&old);
         let _ = std::fs::rename(dst, &old);
     }
-    std::fs::copy(src, dst).map_err(|e| format!("não consegui copiar pra {}: {e}", dst.display()))?;
-    make_executable(dst);
+    // Temporário NO MESMO diretório do destino: rename entre sistemas de arquivos
+    // diferentes falha (EXDEV), e é justamente o rename que precisa funcionar.
+    let tmp = dst.with_file_name(format!(
+        "{}.novo",
+        dst.file_name().and_then(|s| s.to_str()).unwrap_or("schematize")
+    ));
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::copy(src, &tmp)
+        .map_err(|e| format!("não consegui gravar {}: {e}", tmp.display()))?;
+    make_executable(&tmp);
+    if let Err(e) = std::fs::rename(&tmp, dst) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("não consegui substituir {}: {e}", dst.display()));
+    }
     Ok(())
 }
 
@@ -310,20 +340,13 @@ fn make_executable(p: &Path) {
 /// Move `src`→`dst` (rename atômico no mesmo FS; fallback copy). No Windows, se o destino estiver
 /// em uso, renomeia o antigo pra `.old` antes (não dá pra sobrescrever um .exe em execução).
 fn place(src: &Path, dst: &Path) -> Result<(), String> {
+    // Caminho feliz: o download já está no mesmo sistema de arquivos → um rename resolve.
     if std::fs::rename(src, dst).is_ok() {
+        make_executable(dst);
         return Ok(());
     }
-    #[cfg(windows)]
-    {
-        // Destino em uso: aposenta o antigo e tenta de novo.
-        let old = dst.with_extension("old");
-        let _ = std::fs::remove_file(&old);
-        let _ = std::fs::rename(dst, &old);
-        if std::fs::rename(src, dst).is_ok() {
-            return Ok(());
-        }
-    }
-    std::fs::copy(src, dst).map_err(|e| format!("não consegui gravar {}: {e}", dst.display()))?;
-    make_executable(dst);
-    Ok(())
+    // Senão (EXDEV, ou destino travado no Windows), cai no mesmo mecanismo do build:
+    // grava ao lado do destino e renomeia por cima. NUNCA `fs::copy` direto no destino —
+    // é o que dava `Text file busy` com o agente rodando.
+    substitui_binario(src, dst)
 }
