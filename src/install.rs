@@ -98,15 +98,25 @@ fn build_from_source() -> Result<(), String> {
     let dir = platform::install_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    // CLI (schematize) — repo schematize-cli, crate na raiz. SEM `--features gui`: a única GUI é o
-    // Slint (repo próprio, build abaixo); a feature `gui` puxava o egui e ressuscitava o layout velho.
-    build_one(cargo_s, platform::APP_REPO, &[], None, &cli_name, &dir.join(&cli_name))?;
+    // SQLite: se a distro tem a lib de desenvolvimento, LINKA a dela em vez de compilar
+    // ~250 mil linhas de C a cada build limpo. Mesma escolha que o install.sh faz.
+    let sqlite_do_sistema = platform::tem_sqlite_do_sistema();
+    let feats: &[&str] = if sqlite_do_sistema {
+        println!("→ usando a libsqlite3 da distro (não compila o SQLite embutido).");
+        &["--no-default-features", "--features", "sqlite-do-sistema"]
+    } else {
+        &[]
+    };
+
+    // CLI (schematize) — repo schematize-cli, crate na raiz. A GUI egui não existe mais
+    // neste crate: a única janela é a Slint (repo próprio, build abaixo).
+    build_one(cargo_s, platform::APP_REPO, feats, None, &cli_name, &dir.join(&cli_name))?;
     // GUI (schematize-gui) — repo schematize_gui_slint (Slint), crate na raiz. A GUI depende do crate
     // `schematize` como git-dep (branch=main); o `Cargo.lock` commitado FIXA um commit, e o build só
     // recompila — sem avançar o dep. Resultado: a GUI embutia uma versão VELHA (`app_version()` =
     // CARGO_PKG_VERSION do schematize no commit pinado) mesmo com o CLI já novo. `cargo update -p
     // schematize` avança o git-dep pro HEAD do main ANTES de compilar → a versão embutida bate.
-    build_one(cargo_s, platform::GUI_REPO, &[], Some("schematize"), &gui_name, &dir.join(&gui_name))?;
+    build_one(cargo_s, platform::GUI_REPO, feats, Some("schematize"), &gui_name, &dir.join(&gui_name))?;
     // Encerra qualquer GUI ANTIGA ainda aberta: só fechar a janela não bastava (o processo velho
     // seguia vivo e o relaunch reusava a versão anterior). Mata pra o próximo open pegar a nova.
     kill_stale_gui(&gui_name);
@@ -168,10 +178,15 @@ fn build_one(
         args.push((*e).to_string());
     }
     let argsref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    sh::run_inherit(cargo, &argsref)?;
+    // `target/` COMPARTILHADO: as ~226 dependências comuns aos três repos compilam UMA
+    // vez, não três (ver `platform::shared_target_dir`).
+    let tgt = platform::shared_target_dir();
+    std::fs::create_dir_all(&tgt).map_err(|e| e.to_string())?;
+    let tgt_s = tgt.to_string_lossy().to_string();
+    sh::run_inherit_env(cargo, &argsref, &[("CARGO_TARGET_DIR", &tgt_s)])?;
 
     // Copia (NÃO move) o binário — mantém o artefato no target pra o próximo build incremental.
-    let built = src.join("target").join("release").join(binname);
+    let built = tgt.join("release").join(binname);
     if !built.is_file() {
         return Err(format!("build não produziu {}", built.display()));
     }

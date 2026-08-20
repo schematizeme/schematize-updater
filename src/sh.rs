@@ -23,6 +23,23 @@ pub fn run_inherit(cmd: &str, args: &[&str]) -> Result<(), String> {
     }
 }
 
+/// Roda `cmd args` herdando stdio, com variáveis de ambiente EXTRAS.
+/// Usado pra passar `CARGO_TARGET_DIR` aos builds sem depender do ambiente do
+/// processo (o updater roda num terminal que pode ter qualquer coisa exportada).
+pub fn run_inherit_env(cmd: &str, args: &[&str], env: &[(&str, &str)]) -> Result<(), String> {
+    let mut c = Command::new(cmd);
+    c.args(args).stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    for (k, v) in env {
+        c.env(k, v);
+    }
+    let status = c.status().map_err(|e| format!("não consegui executar `{cmd}`: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("`{cmd}` falhou ({status})"))
+    }
+}
+
 /// Roda `cmd args` num diretório específico, herdando stdio (ex.: `cargo install` no clone).
 #[allow(dead_code)]
 pub fn run_inherit_in(dir: &Path, cmd: &str, args: &[&str]) -> Result<(), String> {

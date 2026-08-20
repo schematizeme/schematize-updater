@@ -96,6 +96,29 @@ pub fn build_src_dir(repo: &str) -> PathBuf {
     state_dir().join("build").join(name)
 }
 
+/// `target/` COMPARTILHADO pelos repos que compilamos (CLI, GUI Slint, GUI do updater).
+///
+/// 226 das dependências são as MESMAS nos três. Com um `target/` por checkout elas
+/// compilavam três vezes e ocupavam três vezes o disco; com um só, compilam uma. É o
+/// mesmo diretório e a mesma ideia do `install.sh` da casa — os dois caminhos de
+/// atualização (updater e install.sh) têm de dar no mesmo resultado, senão "atualizei
+/// pelo gestor" e "atualizei pelo instalador" viram experiências diferentes.
+///
+/// Exige perfil de release IDÊNTICO nos repos (cargo só reaproveita artefato quando
+/// o perfil bate) — está documentado no `[profile.release]` de cada um.
+pub fn shared_target_dir() -> PathBuf {
+    state_dir().join("build").join("target")
+}
+
+/// A libsqlite3 de desenvolvimento existe nesta máquina?
+///
+/// Se existir, o CLI linka a da distro em vez de compilar o SQLite embutido (~250 mil
+/// linhas de C a cada build limpo). Crate de Rust não dá pra reusar da distro (Rust não
+/// tem ABI estável); biblioteca C, dá — e esta é a que pesa no build.
+pub fn tem_sqlite_do_sistema() -> bool {
+    sh::capture("pkg-config", &["--exists", "sqlite3"]).is_some()
+}
+
 /// Sufixo de executável (".exe" no Windows).
 pub fn exe_suffix() -> &'static str {
     if os() == Os::Windows {
