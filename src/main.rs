@@ -26,7 +26,7 @@ fn main() {
             Ok(())
         }
         "version" | "--version" | "-V" => {
-            println!("overflow-updater {UPDATER_VERSION}");
+            println!("schematize-updater {UPDATER_VERSION}");
             Ok(())
         }
         // Instala (1ª vez) — igual ao update, mas o nome deixa a intenção clara.
@@ -81,7 +81,7 @@ fn print_status() {
         platform::Os::Mac => "macOS".to_string(),
         platform::Os::Windows => "Windows".to_string(),
     };
-    println!("overflow-updater : v{UPDATER_VERSION}");
+    println!("schematize-updater : v{UPDATER_VERSION}");
     println!("plataforma         : {os_s} / {arch}");
     println!(
         "binário pronto?    : {}",
