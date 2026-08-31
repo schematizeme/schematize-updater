@@ -1,0 +1,38 @@
+name: ci
+
+# POR QUE ISTO EXISTE
+#
+# Este repo tinha `release.yml` (que so compila) e mais nada: nenhum workflow rodava
+# `cargo test`. Dava pra fundir no main com a suite vermelha e cortar um release em cima.
+# A Definition of Done da casa exige "CI verde" — e nao existia CI que pudesse estar verde.
+#
+# `fmt` fica de fora pelo mesmo motivo do CLI: divergencias de rustfmt anteriores a
+# qualquer disciplina aqui, e gate que reprova todo mundo no primeiro dia e gate que
+# alguem desliga na primeira semana.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-ci-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: testes
+        run: cargo test --all-targets

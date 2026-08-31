@@ -361,19 +361,60 @@ fn ensure_build_deps_windows() -> Result<(), String> {
     )
 }
 
+/// Linha de export que o updater acrescenta aos `rc` de shell.
+pub(crate) const LINHA_PATH: &str =
+    "\n# schematize-updater: ~/.cargo/bin no PATH\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\n";
+
+/// Acrescenta [`LINHA_PATH`] a UM arquivo `rc`, sem nunca reescrevê-lo por inteiro.
+///
+/// **O quê:** devolve `Ok(true)` se acrescentou, `Ok(false)` se a linha já estava lá, `Err`
+/// se o arquivo existe mas não pôde ser lido — e nesse caso **não escreve nada**.
+///
+/// **Onde:** [`ensure_path_setup`], uma vez por `rc` (`.bashrc`, `.profile`, `.zshrc`).
+///
+/// **Por que é uma função e não um trecho dentro do `#[cfg(not(windows))]`:** código dentro de
+/// `cfg` de plataforma não compila nas outras, e portanto nenhum teste da máquina de quem
+/// desenvolve o alcança. `cfg` deve escolher DADOS, não esconder LÓGICA.
+///
+/// **Por que `append` e não ler-modificar-escrever:** o que estava aqui era
+/// `read_to_string(&p).unwrap_or_default()` seguido de `fs::write(&p, novo)`. Toda falha de
+/// leitura virava "arquivo vazio", e o `.bashrc` da pessoa era reescrito contendo SÓ a linha
+/// de export. `read_to_string` falha com `InvalidData` em qualquer arquivo que não seja UTF-8
+/// válido — um comentário acentuado em Latin-1 num `.bashrc` é situação corriqueira, e
+/// bastava isso pra destruir anos de configuração. Em modo `append` não há como truncar: o
+/// pior caso é uma linha duplicada.
+pub(crate) fn acrescenta_path_no_rc(p: &std::path::Path) -> Result<bool, String> {
+    match std::fs::read_to_string(p) {
+        Ok(cur) if cur.contains(".cargo/bin") => return Ok(false),
+        Ok(_) => {}
+        // Não existir é normal: o `create(true)` do append cria.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(format!(
+                "{}: não deu pra ler ({e}); deixei o arquivo intacto",
+                p.display()
+            ))
+        }
+    }
+    std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(p)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, LINHA_PATH.as_bytes()))
+        .map(|_| true)
+        .map_err(|e| format!("{}: {e}", p.display()))
+}
+
 /// Garante que `install_dir()` (~/.cargo/bin) esteja no PATH pra o app rodar do terminal.
 /// Unix: acrescenta export nos rc (idempotente). Windows: `setx PATH` (perene) do usuário.
 pub fn ensure_path_setup() {
     #[cfg(not(windows))]
     {
-        let line = "\n# schematize-updater: ~/.cargo/bin no PATH\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\n";
         for rc in [".bashrc", ".profile", ".zshrc"] {
-            let p = home().join(rc);
-            let cur = std::fs::read_to_string(&p).unwrap_or_default();
-            if !cur.contains(".cargo/bin") {
-                let mut new = cur;
-                new.push_str(&line);
-                let _ = std::fs::write(&p, new);
+            // Erro nunca engolido (piso 4): o usuário precisa saber que o PATH não pegou,
+            // senão o sintoma vira "instalei e o comando não existe".
+            if let Err(e) = acrescenta_path_no_rc(&home().join(rc)) {
+                eprintln!("aviso: {e}. Acrescente manualmente:{LINHA_PATH}");
             }
         }
     }
@@ -463,5 +504,70 @@ pub fn app_bin(gui: bool) -> PathBuf {
         abs
     } else {
         PathBuf::from(name)
+    }
+}
+
+#[cfg(test)]
+mod tests_rc {
+    use super::*;
+
+    /// Sandbox exclusivo deste processo.
+    fn sandbox(nome: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("updater-rc-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// **O caso que apagava o `.bashrc`.** Um rc em Latin-1 não é UTF-8 válido; a versão
+    /// anterior mapeava a falha de leitura para `""` e reescrevia o arquivo a partir daí.
+    #[test]
+    fn rc_ilegivel_fica_intacto() {
+        let d = sandbox("latin1");
+        let p = d.join(".bashrc");
+        let original = b"# ambiente de anos, configura\xE7\xE3o\nalias ll='ls -la'\n";
+        std::fs::write(&p, original).unwrap();
+
+        let r = acrescenta_path_no_rc(&p);
+        assert!(r.is_err(), "rc ilegível tinha que dar erro, deu {r:?}");
+        assert_eq!(std::fs::read(&p).unwrap(), original, "o .bashrc do usuário foi alterado");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Rc normal: acrescenta ao FIM, preserva o que havia, e não repete na 2ª chamada.
+    #[test]
+    fn rc_normal_acrescenta_uma_vez_so() {
+        let d = sandbox("ok");
+        let p = d.join(".bashrc");
+        std::fs::write(&p, "alias ll='ls -la'\n").unwrap();
+
+        assert!(acrescenta_path_no_rc(&p).unwrap(), "devia ter acrescentado");
+        let uma = std::fs::read_to_string(&p).unwrap();
+        assert!(uma.starts_with("alias ll='ls -la'\n"), "apagou o conteúdo anterior: {uma}");
+        assert!(uma.contains(".cargo/bin"), "não acrescentou: {uma}");
+
+        assert!(!acrescenta_path_no_rc(&p).unwrap(), "repetiu a linha");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), uma, "a 2ª chamada mexeu no arquivo");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Rc ausente é criado — quem não tem `.zshrc` é a maioria.
+    #[test]
+    fn rc_ausente_e_criado() {
+        let d = sandbox("ausente");
+        let p = d.join(".zshrc");
+        assert!(acrescenta_path_no_rc(&p).unwrap(), "devia ter criado");
+        assert!(std::fs::read_to_string(&p).unwrap().contains(".cargo/bin"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Diretório no lugar do rc é erro, nunca escrita.
+    #[test]
+    fn diretorio_no_lugar_do_rc_e_erro() {
+        let d = sandbox("dir");
+        let p = d.join(".bashrc");
+        std::fs::create_dir_all(&p).unwrap();
+        assert!(acrescenta_path_no_rc(&p).is_err(), "diretório tinha que falhar");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
