@@ -46,7 +46,9 @@ fn main() {
             None => Err("uso: schematize-updater pin <versão>".into()),
         },
         "unpin" => version::write_pin(None).map(|_| println!("pin removido — seguindo latest.")),
-        other => Err(format!("subcomando desconhecido: `{other}` (veja `schematize-updater help`).")),
+        other => {
+            Err(format!("subcomando desconhecido: `{other}` (veja `schematize-updater help`)."))
+        }
     };
 
     if let Err(e) = result {
@@ -85,11 +87,17 @@ fn print_status() {
     println!("plataforma         : {os_s} / {arch}");
     println!(
         "binário pronto?    : {}",
-        if platform::asset_names().is_some() { "sim (caminho rápido disponível)" } else { "não (compila do fonte)" }
+        if platform::asset_names().is_some() {
+            "sim (caminho rápido disponível)"
+        } else {
+            "não (compila do fonte)"
+        }
     );
     println!(
         "app instalado      : {}",
-        version::installed_app_version().map(|v| format!("v{v}")).unwrap_or_else(|| "nenhum".into())
+        version::installed_app_version()
+            .map(|v| format!("v{v}"))
+            .unwrap_or_else(|| "nenhum".into())
     );
     println!(
         "última publicada   : {}",

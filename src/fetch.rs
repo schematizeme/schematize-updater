@@ -16,7 +16,10 @@ pub fn get_text(url: &str) -> Option<String> {
     {
         if sh::has("curl.exe") || sh::has("curl") {
             let c = if sh::has("curl.exe") { "curl.exe" } else { "curl" };
-            return sh::capture(c, &["-fsSL", "-m", "20", "-H", "User-Agent: schematize-updater", url]);
+            return sh::capture(
+                c,
+                &["-fsSL", "-m", "20", "-H", "User-Agent: schematize-updater", url],
+            );
         }
         // Fallback: PowerShell Invoke-WebRequest.
         let ps = format!(
@@ -57,9 +60,12 @@ pub fn download(url: &str, dest: &Path) -> bool {
 pub fn url_ok(url: &str) -> bool {
     #[cfg(not(windows))]
     {
-        sh::capture("curl", &["-fsSL", "-I", "-o", "/dev/null", "-w", "%{http_code}", "-m", "15", url])
-            .map(|c| c.trim() == "200")
-            .unwrap_or(false)
+        sh::capture(
+            "curl",
+            &["-fsSL", "-I", "-o", "/dev/null", "-w", "%{http_code}", "-m", "15", url],
+        )
+        .map(|c| c.trim() == "200")
+        .unwrap_or(false)
     }
     #[cfg(windows)]
     {

@@ -48,10 +48,7 @@ pub fn install_or_update(force: bool) -> Result<(), String> {
 /// Tenta baixar+instalar os binários pré-compilados da v{target}. `Ok(true)` = instalou;
 /// `Ok(false)` = asset ausente OU baixado não executa aqui (incompatível → cai pro fonte).
 fn try_binary(target: &str, cli_asset: &str, gui_asset: &str) -> Result<bool, String> {
-    let base = format!(
-        "https://github.com/{}/releases/download/v{target}",
-        platform::APP_REPO
-    );
+    let base = format!("https://github.com/{}/releases/download/v{target}", platform::APP_REPO);
     let tmp = platform::state_dir().join("dl");
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
@@ -114,7 +111,10 @@ fn build_from_source() -> Result<(), String> {
         println!("→ removida instalação anterior: {}", p.display());
     }
     for p in &resistiram {
-        println!("aviso: não consegui remover {} (permissão?) — se o `schematize` continuar", p.display());
+        println!(
+            "aviso: não consegui remover {} (permissão?) — se o `schematize` continuar",
+            p.display()
+        );
         println!("       abrindo uma versão velha, apague este arquivo à mão.");
     }
 
@@ -137,7 +137,14 @@ fn build_from_source() -> Result<(), String> {
     // recompila — sem avançar o dep. Resultado: a GUI embutia uma versão VELHA (`app_version()` =
     // CARGO_PKG_VERSION do schematize no commit pinado) mesmo com o CLI já novo. `cargo update -p
     // schematize` avança o git-dep pro HEAD do main ANTES de compilar → a versão embutida bate.
-    build_one(cargo_s, platform::GUI_REPO, feats, Some("schematize"), &gui_name, &dir.join(&gui_name))?;
+    build_one(
+        cargo_s,
+        platform::GUI_REPO,
+        feats,
+        Some("schematize"),
+        &gui_name,
+        &dir.join(&gui_name),
+    )?;
     limpa_interregno(&dir, &i_gui);
     // Encerra qualquer GUI ANTIGA ainda aberta: só fechar a janela não bastava (o processo velho
     // seguia vivo e o relaunch reusava a versão anterior). Mata pra o próximo open pegar a nova.
@@ -150,7 +157,9 @@ fn build_from_source() -> Result<(), String> {
     // falha (o updater headless e o app já estão instalados; é só chrome). Não depende do crate
     // `schematize`, então sem `refresh_dep`.
     let ugui = platform::updater_gui_bin();
-    if let Err(e) = build_one(cargo_s, platform::UPDATER_GUI_REPO, &[], None, &ugui, &dir.join(&ugui)) {
+    if let Err(e) =
+        build_one(cargo_s, platform::UPDATER_GUI_REPO, &[], None, &ugui, &dir.join(&ugui))
+    {
         println!("aviso: build da GUI do updater falhou (opcional, seguindo): {e}");
     }
 
@@ -202,7 +211,10 @@ fn limpa_targets_antigos() {
         }
     }
     if liberado > 0 {
-        println!("→ liberados {} de `target/` antigo (agora há um só, compartilhado).", legivel(liberado));
+        println!(
+            "→ liberados {} de `target/` antigo (agora há um só, compartilhado).",
+            legivel(liberado)
+        );
     }
 }
 
@@ -365,8 +377,7 @@ fn substitui_binario(src: &Path, dst: &Path) -> Result<(), String> {
         dst.file_name().and_then(|s| s.to_str()).unwrap_or("schematize")
     ));
     let _ = std::fs::remove_file(&tmp);
-    std::fs::copy(src, &tmp)
-        .map_err(|e| format!("não consegui gravar {}: {e}", tmp.display()))?;
+    std::fs::copy(src, &tmp).map_err(|e| format!("não consegui gravar {}: {e}", tmp.display()))?;
     make_executable(&tmp);
     if let Err(e) = std::fs::rename(&tmp, dst) {
         let _ = std::fs::remove_file(&tmp);

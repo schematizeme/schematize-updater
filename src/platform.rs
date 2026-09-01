@@ -58,8 +58,14 @@ pub fn linux_family() -> LinuxFam {
     let has = |k: &str| low.contains(k);
     if has("debian") || has("ubuntu") || has("mint") || has("pop") || has("elementary") {
         LinuxFam::Debian
-    } else if has("suse") || has("opensuse") || has("sles") || has("fedora") || has("rhel")
-        || has("centos") || has("rocky") || has("alma")
+    } else if has("suse")
+        || has("opensuse")
+        || has("sles")
+        || has("fedora")
+        || has("rhel")
+        || has("centos")
+        || has("rocky")
+        || has("alma")
     {
         LinuxFam::Rpm
     } else if has("arch") || has("manjaro") || has("endeavour") {
@@ -262,38 +268,113 @@ fn ensure_build_deps_linux() -> Result<(), String> {
         LinuxFam::Debian => {
             let _ = pkg_install(&["apt-get", "update", "-qq"]);
             pkg_install(&[
-                "apt-get", "install", "-y", "build-essential", "pkg-config", "libx11-dev",
-                "libxcursor-dev", "libxrandr-dev", "libxi-dev", "libxkbcommon-dev", "libwayland-dev",
-                "libgl1-mesa-dev", "libxcb1-dev", "libxcb-render0-dev", "libxcb-shape0-dev",
-                "libxcb-xfixes0-dev", "libfontconfig1-dev",
+                "apt-get",
+                "install",
+                "-y",
+                "build-essential",
+                "pkg-config",
+                "libx11-dev",
+                "libxcursor-dev",
+                "libxrandr-dev",
+                "libxi-dev",
+                "libxkbcommon-dev",
+                "libwayland-dev",
+                "libgl1-mesa-dev",
+                "libxcb1-dev",
+                "libxcb-render0-dev",
+                "libxcb-shape0-dev",
+                "libxcb-xfixes0-dev",
+                "libfontconfig1-dev",
             ])?;
             // Fontes de cobertura ampla (não-latinos) — best-effort.
-            let _ = pkg_install(&["apt-get", "install", "-y", "fonts-noto-core", "fonts-noto-cjk", "fonts-dejavu-core"]);
+            let _ = pkg_install(&[
+                "apt-get",
+                "install",
+                "-y",
+                "fonts-noto-core",
+                "fonts-noto-cjk",
+                "fonts-dejavu-core",
+            ]);
         }
         LinuxFam::Rpm => {
             let mgr = if sh::has("zypper") { "zypper" } else { "dnf" };
             if mgr == "zypper" {
                 pkg_install(&[
-                    "zypper", "--non-interactive", "install", "-y", "gcc", "gcc-c++", "make",
-                    "pkg-config", "libX11-devel", "libXcursor-devel", "libXrandr-devel", "libXi-devel",
-                    "libxkbcommon-devel", "wayland-devel", "Mesa-libGL-devel", "libxcb-devel",
+                    "zypper",
+                    "--non-interactive",
+                    "install",
+                    "-y",
+                    "gcc",
+                    "gcc-c++",
+                    "make",
+                    "pkg-config",
+                    "libX11-devel",
+                    "libXcursor-devel",
+                    "libXrandr-devel",
+                    "libXi-devel",
+                    "libxkbcommon-devel",
+                    "wayland-devel",
+                    "Mesa-libGL-devel",
+                    "libxcb-devel",
                     "fontconfig-devel",
                 ])?;
-                let _ = pkg_install(&["zypper", "--non-interactive", "install", "-y", "noto-sans-fonts", "noto-sans-cjk-fonts", "dejavu-fonts"]);
+                let _ = pkg_install(&[
+                    "zypper",
+                    "--non-interactive",
+                    "install",
+                    "-y",
+                    "noto-sans-fonts",
+                    "noto-sans-cjk-fonts",
+                    "dejavu-fonts",
+                ]);
             } else {
                 pkg_install(&[
-                    "dnf", "install", "-y", "gcc", "gcc-c++", "make", "pkg-config", "libX11-devel",
-                    "libXcursor-devel", "libXrandr-devel", "libXi-devel", "libxkbcommon-devel",
-                    "wayland-devel", "Mesa-libGL-devel", "libxcb-devel", "fontconfig-devel",
+                    "dnf",
+                    "install",
+                    "-y",
+                    "gcc",
+                    "gcc-c++",
+                    "make",
+                    "pkg-config",
+                    "libX11-devel",
+                    "libXcursor-devel",
+                    "libXrandr-devel",
+                    "libXi-devel",
+                    "libxkbcommon-devel",
+                    "wayland-devel",
+                    "Mesa-libGL-devel",
+                    "libxcb-devel",
+                    "fontconfig-devel",
                 ])?;
-                let _ = pkg_install(&["dnf", "install", "-y", "google-noto-sans-fonts", "google-noto-sans-cjk-fonts", "dejavu-sans-fonts"]);
+                let _ = pkg_install(&[
+                    "dnf",
+                    "install",
+                    "-y",
+                    "google-noto-sans-fonts",
+                    "google-noto-sans-cjk-fonts",
+                    "dejavu-sans-fonts",
+                ]);
             }
         }
         LinuxFam::Arch => {
             pkg_install(&[
-                "pacman", "-S", "--needed", "--noconfirm", "base-devel", "pkgconf", "libx11",
-                "libxcursor", "libxrandr", "libxi", "libxkbcommon", "wayland", "mesa", "libxcb",
-                "fontconfig", "noto-fonts", "noto-fonts-cjk",
+                "pacman",
+                "-S",
+                "--needed",
+                "--noconfirm",
+                "base-devel",
+                "pkgconf",
+                "libx11",
+                "libxcursor",
+                "libxrandr",
+                "libxi",
+                "libxkbcommon",
+                "wayland",
+                "mesa",
+                "libxcb",
+                "fontconfig",
+                "noto-fonts",
+                "noto-fonts-cjk",
             ])?;
         }
         LinuxFam::Unknown => {
@@ -320,8 +401,7 @@ fn ensure_build_deps_mac() -> Result<(), String> {
         println!("→ instalando as Command Line Tools do Xcode (aceite o popup)…");
         let _ = sh::run_inherit("xcode-select", &["--install"]);
         return Err(
-            "conclua a instalação das Command Line Tools do Xcode (popup) e rode de novo."
-                .into(),
+            "conclua a instalação das Command Line Tools do Xcode (popup) e rode de novo.".into()
         );
     }
     Ok(())
@@ -343,8 +423,12 @@ fn ensure_build_deps_windows() -> Result<(), String> {
         let _ = sh::run_inherit(
             "winget",
             &[
-                "install", "--id", "Microsoft.VisualStudio.2022.BuildTools", "-e",
-                "--accept-source-agreements", "--accept-package-agreements",
+                "install",
+                "--id",
+                "Microsoft.VisualStudio.2022.BuildTools",
+                "-e",
+                "--accept-source-agreements",
+                "--accept-package-agreements",
                 "--override",
                 "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools",
             ],
@@ -390,10 +474,7 @@ pub(crate) fn acrescenta_path_no_rc(p: &std::path::Path) -> Result<bool, String>
         // Não existir é normal: o `create(true)` do append cria.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {
-            return Err(format!(
-                "{}: não deu pra ler ({e}); deixei o arquivo intacto",
-                p.display()
-            ))
+            return Err(format!("{}: não deu pra ler ({e}); deixei o arquivo intacto", p.display()))
         }
     }
     std::fs::OpenOptions::new()
@@ -422,7 +503,11 @@ pub fn ensure_path_setup() {
     {
         let dir_s = install_dir().to_string_lossy().to_string();
         // Só adiciona se ainda não estiver no PATH do usuário (evita duplicar).
-        let cur = sh::capture("powershell", &["-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path','User')"]).unwrap_or_default();
+        let cur = sh::capture(
+            "powershell",
+            &["-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path','User')"],
+        )
+        .unwrap_or_default();
         if !cur.to_lowercase().contains(&dir_s.to_lowercase()) {
             let ps = format!(
                 "[Environment]::SetEnvironmentVariable('Path', ([Environment]::GetEnvironmentVariable('Path','User') + ';{dir_s}'), 'User')"
@@ -457,11 +542,8 @@ pub fn make_launcher() {
         &["icon", "--hicolor", icons_dir.to_str().unwrap_or_default()],
     );
     // Icon= com caminho ABSOLUTO do 256px (à prova de cache/tema); se o png não saiu, cai pro nome.
-    let icon = if icon_png.is_file() {
-        icon_png.display().to_string()
-    } else {
-        "schematize".to_string()
-    };
+    let icon =
+        if icon_png.is_file() { icon_png.display().to_string() } else { "schematize".to_string() };
     // O lançador é o do nome canônico, e o `StartupWMClass` bate com o app_id que o
     // binário anuncia (a GUI o deriva do próprio nome) — senão o dock não casa a
     // janela com o ícone.
@@ -479,7 +561,8 @@ pub fn make_launcher() {
     // o do dir do usuário: o de /usr/share é do pacote, não é nosso.
     let _ = std::fs::remove_file(apps.join("overflow-gui.desktop"));
     let _ = sh::run_inherit("update-desktop-database", &[apps.to_str().unwrap_or_default()]);
-    let _ = sh::capture("gtk-update-icon-cache", &["-f", "-t", icons_dir.to_str().unwrap_or_default()]);
+    let _ =
+        sh::capture("gtk-update-icon-cache", &["-f", "-t", icons_dir.to_str().unwrap_or_default()]);
 }
 
 // (helpers cross-OS abaixo)

@@ -60,12 +60,8 @@ pub fn run_inherit_in(dir: &Path, cmd: &str, args: &[&str]) -> Result<(), String
 
 /// Captura o stdout de `cmd args` (silencioso). `None` se falhar/sair !=0. Trim aplicado.
 pub fn capture(cmd: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new(cmd)
-        .args(args)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
+    let out =
+        Command::new(cmd).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
     if out.status.success() {
         Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {

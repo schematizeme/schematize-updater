@@ -1,6 +1,6 @@
 [package]
 name = "schematize-updater"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 description = "Bootstrapper/gestor de versão do ecossistema schematize — instala e atualiza o app (CLI + GUI) na máquina do usuário, cross-OS (Linux/macOS/Windows), híbrido (binário pronto se houver, senão compila do fonte). Desacoplado do app: um updater quebrado não trava o app e vice-versa."
 license = "MIT"

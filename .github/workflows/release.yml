@@ -44,6 +44,11 @@ jobs:
         run: cp target/${{ matrix.target }}/release/schematize-updater ${{ matrix.asset }}
       - name: Rename asset (windows)
         if: runner.os == 'Windows'
+        # `shell: cmd` explicito: `copy` com barra invertida e sintaxe do cmd, e sem esta
+        # linha o passo herdava o `pwsh` (default do runner Windows) — funcionava por
+        # acidente, via alias. Declarar o shell tira a ambiguidade e cala o analisador,
+        # que ate aqui lia a linha como bash e reportava tres falsos positivos.
+        shell: cmd
         run: copy target\${{ matrix.target }}\release\schematize-updater.exe ${{ matrix.asset }}
       - name: Upload to release
         uses: softprops/action-gh-release@v2

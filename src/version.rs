@@ -40,9 +40,10 @@ pub fn installed_app_version() -> Option<String> {
     let bin = platform::app_bin(false);
     let out = sh::capture(bin.to_str().unwrap_or("schematize"), &["--version"])?;
     // formato "overflow 0.45.0" (ou "schematize 0.44.1" numa instalação anterior)
-    out.split_whitespace().last().map(|s| s.to_string()).filter(|s| {
-        s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
-    })
+    out.split_whitespace()
+        .last()
+        .map(|s| s.to_string())
+        .filter(|s| s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
 }
 
 /// Arquivo de PIN (versão fixada). Vazio/ausente = sempre "latest".

@@ -27,12 +27,18 @@ fn nomes() -> Vec<String> {
         // nomes novos (Overflow) e os anteriores — a purga tem de reconhecer os dois,
         // senão uma cópia-fantasma com o nome antigo sobrevive num dir de maior
         // precedência no PATH e o app "volta" pra uma versão velha. Foi esse o bug.
-        "overflow", "overflow-gui", "overflow-updater", "overflow-updater-gui",
-        "schematize", "schematize-gui", "schematize-updater", "schematize-updater-gui",
+        "overflow",
+        "overflow-gui",
+        "overflow-updater",
+        "overflow-updater-gui",
+        "schematize",
+        "schematize-gui",
+        "schematize-updater",
+        "schematize-updater-gui",
     ]
-        .iter()
-        .map(|b| format!("{b}{sfx}"))
-        .collect()
+    .iter()
+    .map(|b| format!("{b}{sfx}"))
+    .collect()
 }
 
 /// Todo diretório onde alguma versão já pôde ser instalada.
@@ -168,7 +174,10 @@ mod tests {
         assert!(mesmo_arquivo(&eu, &eu.clone()));
         // um caminho equivalente (com "." no meio) também tem de casar
         let equivalente = base.join(".").join("schematize-updater");
-        assert!(mesmo_arquivo(&eu, &equivalente), "canonizar tem de resolver caminhos equivalentes");
+        assert!(
+            mesmo_arquivo(&eu, &equivalente),
+            "canonizar tem de resolver caminhos equivalentes"
+        );
         let _ = std::fs::remove_dir_all(&base);
     }
 }
