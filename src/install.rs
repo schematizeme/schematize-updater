@@ -12,24 +12,45 @@ pub fn install_or_update(force: bool) -> Result<(), String> {
         .ok_or("não consegui resolver a versão-alvo (rede/GitHub indisponível?).")?;
     let installed = version::installed_app_version();
 
-    if !force {
-        if let Some(cur) = &installed {
-            if cur == &target {
-                println!("Já está na versão-alvo (v{target}). Nada a fazer.");
-                return Ok(());
-            }
-        }
-    }
-    println!(
-        "schematize-updater: alvo v{target} (instalado: {}).",
-        installed.as_deref().unwrap_or("nenhum")
-    );
+    // O app estar em dia NÃO encerra o comando. O Deployer é OUTRO app, com versão própria,
+    // e a checagem dele vem no fim desta função.
+    //
+    // Aqui havia um `return Ok(())`, e ele tornava a atualização do Deployer inalcançável
+    // sempre que o schematize estivesse atual — que é a maioria das vezes.
+    let dir = platform::install_dir();
+    let tem_deployer = deve_reconstruir_deployer(&dir, &platform::deployer_bin());
+    let plano = planejar(force, installed.as_deref(), &target, tem_deployer);
 
+    if plano.app {
+        println!(
+            "schematize-updater: alvo v{target} (instalado: {}).",
+            installed.as_deref().unwrap_or("nenhum")
+        );
+        atualizar_app(&target)?;
+    } else {
+        println!("O app já está na versão-alvo (v{target}).");
+    }
+
+    if plano.deployer {
+        atualizar_deployer_se_instalado(force);
+    }
+    Ok(())
+}
+
+/// **O quê:** instala/atualiza o app (schematize + GUI + updater) na versão `target`.
+///
+/// **Onde:** [`install_or_update`].
+///
+/// **Por que é uma função separada:** o caminho rápido abaixo (binário pré-compilado) faz
+/// `return` antes do build do fonte. Enquanto a atualização do Deployer morava lá dentro,
+/// ela **nunca rodava** quando havia asset publicado — que passa a ser o caso normal depois
+/// de um release. Separar é o que garante que os dois passos aconteçam, em qualquer caminho.
+fn atualizar_app(target: &str) -> Result<(), String> {
     // 1) CAMINHO RÁPIDO — binário pré-compilado, se houver asset pra esta plataforma.
     if let Some((cli_asset, gui_asset)) = platform::asset_names() {
-        match try_binary(&target, cli_asset, gui_asset) {
+        match try_binary(target, cli_asset, gui_asset) {
             Ok(true) => {
-                finish(&target);
+                finish(target);
                 return Ok(());
             }
             Ok(false) => println!("→ sem binário compatível pra v{target} — compilando do fonte…"),
@@ -41,7 +62,7 @@ pub fn install_or_update(force: bool) -> Result<(), String> {
 
     // 2) CAMINHO CONFIÁVEL — compila do fonte (funciona em qualquer SO com toolchain).
     build_from_source()?;
-    finish(&target);
+    finish(target);
     Ok(())
 }
 
@@ -161,27 +182,6 @@ fn build_from_source() -> Result<(), String> {
         build_one(cargo_s, platform::UPDATER_GUI_REPO, &[], None, &ugui, &dir.join(&ugui))
     {
         println!("aviso: build da GUI do updater falhou (opcional, seguindo): {e}");
-    }
-
-    // DEPLOYER (SSH/VPS) — reconstruído SÓ SE JÁ ESTIVER INSTALADO.
-    //
-    // A condição é a decisão inteira. Atualizar não pode INSTALAR app que ninguém pediu: quem
-    // roda `update` quer o que já tem, mais novo — não software novo aparecendo no `~/.cargo/bin`
-    // porque a casa lançou outro produto. Um updater que faz isso vira algo de que se desconfia,
-    // e a desconfiança contamina as atualizações que importam (as de segurança).
-    //
-    // Quem quer o Deployer o instala explicitamente, com `--deployer` no install.sh ou por
-    // `schematize deployer instalar`. A partir daí, este bloco o mantém em dia junto com o resto.
-    //
-    // OPCIONAL como a GUI do updater: se o build falhar, o update NÃO falha — o resto já está
-    // instalado, e derrubar tudo por causa de um componente é o oposto do piso 10.
-    let dep = platform::deployer_bin();
-    if deve_reconstruir_deployer(&dir, &dep) {
-        if let Err(e) =
-            build_one(cargo_s, platform::DEPLOYER_REPO, feats, None, &dep, &dir.join(&dep))
-        {
-            println!("aviso: build do deployer falhou (opcional, seguindo): {e}");
-        }
     }
 
     // O PRÓPRIO updater, POR ÚLTIMO.
@@ -509,16 +509,117 @@ mod tests {
     }
 }
 
-/// **O quê:** o Deployer deve ser reconstruído neste `update`?
+/// O que um `update` precisa fazer nesta máquina.
 ///
-/// **Onde:** [`build_from_source`]. Separada da função de build por um motivo prático: lá
-/// dentro a decisão fica misturada com clone, cargo e cópia de binário, e **nenhum teste a
-/// alcança**. Aqui ela é uma regra sobre um diretório, e um teste a exercita.
+/// **Por que isto é uma struct e não um `if` no meio do fluxo:** o defeito original foi
+/// exatamente de FLUXO — um `return Ok(())` antecipado quando o app estava em dia tornava a
+/// atualização do Deployer inalcançável. Fluxo enterrado dentro de uma função com rede,
+/// clone e `cargo` não é testável, e por isso o defeito não foi pego por teste nenhum.
+/// Como struct, a decisão é uma função pura e há teste sobre ela.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Plano {
+    /// Atualizar o app (schematize + GUI + o próprio updater)?
+    pub app: bool,
+    /// Verificar o Deployer? (verificar ≠ atualizar: a versão dele decide depois)
+    pub deployer: bool,
+}
+
+/// **O quê:** decide o que este `update` faz, a partir do estado da máquina.
 ///
-/// **A regra:** reconstrói **só se o binário já estiver lá**. Atualizar não instala app que
-/// ninguém pediu — ver a nota no chamador.
+/// **Onde:** [`install_or_update`], como primeira coisa.
+///
+/// **A regra que mais importa:** `deployer` é `true` **independentemente** de o app estar em
+/// dia. Os dois são apps distintos, com versões e ciclos próprios; amarrar um ao outro é o
+/// defeito que esta função existe para impedir.
+pub(crate) fn planejar(
+    force: bool,
+    instalada: Option<&str>,
+    alvo: &str,
+    deployer_instalado: bool,
+) -> Plano {
+    Plano {
+        app: force || instalada != Some(alvo),
+        // Verificar o Deployer NUNCA depende da versão do app — só de ele existir aqui.
+        deployer: deployer_instalado,
+    }
+}
+
+/// **O quê:** o Deployer deve ser tocado neste `update`?
+///
+/// **Onde:** [`atualizar_deployer_se_instalado`]. Separada por um motivo prático: dentro da
+/// função de build a decisão fica misturada com clone, cargo e cópia de binário, e **nenhum
+/// teste a alcança**.
+///
+/// **A regra:** só se o binário **já estiver lá**. Atualizar não instala app que ninguém
+/// pediu — quem roda `update` quer o que já tem, mais novo, não software novo aparecendo no
+/// `~/.cargo/bin` porque a casa lançou outro produto. Um updater que faz isso vira um updater
+/// de que se desconfia, e a desconfiança contamina justamente as atualizações que importam.
 pub(crate) fn deve_reconstruir_deployer(dir: &std::path::Path, bin: &str) -> bool {
     dir.join(bin).is_file()
+}
+
+/// **O quê:** o Deployer instalado precisa de update? Compara a versão DELE com a do `main`
+/// do repositório DELE.
+///
+/// **Onde:** [`atualizar_deployer_se_instalado`]. Função pura sobre as duas versões, para que
+/// a regra seja testável sem rede.
+///
+/// **Por que existe separada da versão do app:** o defeito original foi exatamente comparar
+/// coisas diferentes — o Deployer tem versão própria e ciclo próprio. Um `update` que decide
+/// sobre ele pela versão do schematize erra nas duas direções: deixa de atualizar quando
+/// precisa, e recompila à toa quando não.
+pub(crate) fn deployer_desatualizado(instalada: Option<&str>, ultima: Option<&str>) -> bool {
+    match (instalada, ultima) {
+        // Sem saber a última (rede fora), não recompila: o que está instalado funciona, e
+        // gastar minutos de CPU por causa de uma falha de rede é o oposto de útil.
+        (_, None) => false,
+        // Instalado mas sem responder `--version`: reconstruir é o conserto provável.
+        (None, Some(_)) => true,
+        (Some(a), Some(b)) => a != b,
+    }
+}
+
+/// **O quê:** mantém o Deployer em dia, se — e somente se — ele já estiver instalado.
+///
+/// **Onde:** [`install_or_update`], sempre, nos dois caminhos (binário e fonte).
+///
+/// **Nunca devolve erro:** o Deployer é opcional. Falhar o `update` inteiro porque um app
+/// que a pessoa talvez nem use não compilou é o oposto do piso 10 — a ausência ou a queda de
+/// um componente não pode derrubar os outros.
+fn atualizar_deployer_se_instalado(force: bool) {
+    let dir = platform::install_dir();
+    let bin = platform::deployer_bin();
+    if !deve_reconstruir_deployer(&dir, &bin) {
+        return; // não instalado — e atualizar não é instalar.
+    }
+    let alvo = dir.join(&bin);
+    let instalada = version::installed_version_of(&alvo);
+    let ultima = version::latest_version_of(platform::DEPLOYER_REPO);
+
+    if !force && !deployer_desatualizado(instalada.as_deref(), ultima.as_deref()) {
+        println!("deployer já está na versão-alvo (v{}).", instalada.as_deref().unwrap_or("?"));
+        return;
+    }
+    println!(
+        "deployer: alvo v{} (instalado: {}). Compilando…",
+        ultima.as_deref().unwrap_or("?"),
+        instalada.as_deref().unwrap_or("nenhum")
+    );
+    // Mesma resolução de toolchain do build do app. Sem ela, não há o que compilar — e isso
+    // é aviso, não erro: quem não tem cargo continua com o Deployer que já tinha.
+    let cargo = match platform::ensure_toolchain() {
+        Ok(c) => c,
+        Err(e) => {
+            println!("aviso: deployer não atualizado (sem toolchain: {e}).");
+            return;
+        }
+    };
+    let cargo_s = cargo.to_str().unwrap_or("cargo");
+    if let Err(e) = build_one(cargo_s, platform::DEPLOYER_REPO, &[], None, &bin, &alvo) {
+        println!("aviso: build do deployer falhou (opcional, seguindo): {e}");
+    } else {
+        println!("✓ deployer atualizado.");
+    }
 }
 
 #[cfg(test)]
@@ -532,18 +633,17 @@ mod tests_deployer {
         d
     }
 
-    /// **A regra que este teste existe para travar:** sem o Deployer instalado, o `update`
-    /// NÃO o traz. Se alguém trocar a condição por `true` "pra facilitar", o updater passa a
-    /// instalar software que ninguém pediu — e um updater assim é um updater de que se
-    /// desconfia, o que contamina as atualizações que importam.
+    /// **A regra que este teste trava:** sem o Deployer instalado, o `update` NÃO o traz. Se
+    /// alguém trocar a condição por `true` "pra facilitar", o updater passa a instalar
+    /// software que ninguém pediu.
     #[test]
     fn nao_instala_deployer_em_quem_nao_o_tem() {
         let d = sandbox("ausente");
-        assert!(!deve_reconstruir_deployer(&d, "deployer"), "atualizar não pode INSTALAR app novo");
+        assert!(!deve_reconstruir_deployer(&d, "deployer"), "atualizar não pode INSTALAR");
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// Quem já tem, mantém em dia — que é o outro lado da mesma regra.
+    /// Quem já tem, mantém em dia — o outro lado da mesma regra.
     #[test]
     fn mantem_em_dia_quem_ja_o_tem() {
         let d = sandbox("presente");
@@ -552,8 +652,8 @@ mod tests_deployer {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// Diretório com OUTROS binários da casa, mas sem o deployer, continua sendo "não tem".
-    /// Sem esta asserção, um `read_dir().next().is_some()` passaria nos dois testes acima.
+    /// Outros binários da casa não contam. Sem esta asserção, um
+    /// `read_dir().next().is_some()` passaria nos dois testes acima.
     #[test]
     fn outros_binarios_nao_contam_como_deployer() {
         let d = sandbox("outros");
@@ -562,5 +662,55 @@ mod tests_deployer {
         }
         assert!(!deve_reconstruir_deployer(&d, "deployer"));
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **O DEFEITO ORIGINAL, travado por teste:** com o app em dia, o `update` retornava
+    /// cedo e o Deployer nunca era verificado. Aqui a asserção é justamente essa — app em
+    /// dia, Deployer ainda entra no plano.
+    #[test]
+    fn app_em_dia_nao_impede_a_checagem_do_deployer() {
+        let p = planejar(false, Some("0.57.0"), "0.57.0", true);
+        assert!(!p.app, "o app está em dia — não há o que fazer nele");
+        assert!(p.deployer, "o Deployer TEM de ser verificado mesmo assim: é outro app");
+    }
+
+    /// E o inverso: sem o Deployer instalado, ele não entra no plano nem com o app
+    /// desatualizado. Atualizar não instala.
+    #[test]
+    fn sem_deployer_instalado_ele_nao_entra_no_plano() {
+        let p = planejar(false, Some("0.55.0"), "0.57.0", false);
+        assert!(p.app);
+        assert!(!p.deployer, "atualizar o app não pode instalar um app que ninguém pediu");
+    }
+
+    /// `--force` refaz o app; o Deployer continua governado só por estar instalado.
+    #[test]
+    fn force_refaz_o_app_e_nao_muda_a_regra_do_deployer() {
+        assert!(planejar(true, Some("0.57.0"), "0.57.0", false).app);
+        assert!(!planejar(true, Some("0.57.0"), "0.57.0", false).deployer);
+        assert!(planejar(true, Some("0.57.0"), "0.57.0", true).deployer);
+    }
+
+    /// **O defeito que esta função existe para não repetir:** decidir sobre o Deployer pela
+    /// versão do schematize. Aqui a comparação é entre as versões DELE.
+    #[test]
+    fn compara_a_versao_do_proprio_deployer() {
+        assert!(deployer_desatualizado(Some("0.2.1"), Some("0.3.0")), "mais novo lá → atualiza");
+        assert!(!deployer_desatualizado(Some("0.3.0"), Some("0.3.0")), "igual → não mexe");
+    }
+
+    /// Rede fora não pode virar recompilação: o que está instalado funciona, e queimar
+    /// minutos de CPU por causa de um GitHub indisponível é o oposto de útil.
+    #[test]
+    fn sem_saber_a_ultima_versao_nao_recompila() {
+        assert!(!deployer_desatualizado(Some("0.2.1"), None));
+        assert!(!deployer_desatualizado(None, None));
+    }
+
+    /// Binário presente que não responde `--version` é instalação quebrada — reconstruir é
+    /// o conserto provável, e não fazer nada deixaria a pessoa presa.
+    #[test]
+    fn binario_que_nao_responde_e_reconstruido() {
+        assert!(deployer_desatualizado(None, Some("0.3.0")));
     }
 }

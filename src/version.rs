@@ -118,3 +118,28 @@ mod tests {
         assert!(!semver_lt("1.0.0", "0.34.1"));
     }
 }
+
+/// **O quê:** última versão publicada de QUALQUER repo da casa (lê o `version` do
+/// `Cargo.toml` no `main`, via raw — sem gastar a cota de 60/h da API).
+///
+/// **Onde:** [`latest_app_version`] e a checagem do Deployer.
+///
+/// **Por que parametrizado:** o Deployer é um app com **versão própria**. Reusar a versão do
+/// schematize para decidir se ele precisa de update seria comparar duas coisas diferentes —
+/// e é exatamente o defeito que esta função existe para não deixar acontecer de novo.
+pub fn latest_version_of(repo: &str) -> Option<String> {
+    let url = format!("https://raw.githubusercontent.com/{repo}/main/Cargo.toml");
+    parse_cargo_version(&fetch::get_text(&url)?)
+}
+
+/// **O quê:** versão de um binário instalado (`<bin> --version` → último token que começa
+/// com dígito). `None` se não instalado ou se não responde.
+///
+/// **Onde:** [`installed_app_version`] e a checagem do Deployer.
+pub fn installed_version_of(bin: &std::path::Path) -> Option<String> {
+    let out = sh::capture(bin.to_str()?, &["--version"])?;
+    out.split_whitespace()
+        .last()
+        .map(|s| s.to_string())
+        .filter(|s| s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
+}
