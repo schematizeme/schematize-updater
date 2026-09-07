@@ -163,6 +163,27 @@ fn build_from_source() -> Result<(), String> {
         println!("aviso: build da GUI do updater falhou (opcional, seguindo): {e}");
     }
 
+    // DEPLOYER (SSH/VPS) — reconstruído SÓ SE JÁ ESTIVER INSTALADO.
+    //
+    // A condição é a decisão inteira. Atualizar não pode INSTALAR app que ninguém pediu: quem
+    // roda `update` quer o que já tem, mais novo — não software novo aparecendo no `~/.cargo/bin`
+    // porque a casa lançou outro produto. Um updater que faz isso vira algo de que se desconfia,
+    // e a desconfiança contamina as atualizações que importam (as de segurança).
+    //
+    // Quem quer o Deployer o instala explicitamente, com `--deployer` no install.sh ou por
+    // `schematize deployer instalar`. A partir daí, este bloco o mantém em dia junto com o resto.
+    //
+    // OPCIONAL como a GUI do updater: se o build falhar, o update NÃO falha — o resto já está
+    // instalado, e derrubar tudo por causa de um componente é o oposto do piso 10.
+    let dep = platform::deployer_bin();
+    if deve_reconstruir_deployer(&dir, &dep) {
+        if let Err(e) =
+            build_one(cargo_s, platform::DEPLOYER_REPO, feats, None, &dep, &dir.join(&dep))
+        {
+            println!("aviso: build do deployer falhou (opcional, seguindo): {e}");
+        }
+    }
+
     // O PRÓPRIO updater, POR ÚLTIMO.
     //
     // Ele era o único componente que ninguém atualizava: reconstruía o CLI, a GUI e a
@@ -485,5 +506,61 @@ mod tests {
         // não deixou lixo pra trás
         assert!(!base.join("bin.novo").exists());
         let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
+/// **O quê:** o Deployer deve ser reconstruído neste `update`?
+///
+/// **Onde:** [`build_from_source`]. Separada da função de build por um motivo prático: lá
+/// dentro a decisão fica misturada com clone, cargo e cópia de binário, e **nenhum teste a
+/// alcança**. Aqui ela é uma regra sobre um diretório, e um teste a exercita.
+///
+/// **A regra:** reconstrói **só se o binário já estiver lá**. Atualizar não instala app que
+/// ninguém pediu — ver a nota no chamador.
+pub(crate) fn deve_reconstruir_deployer(dir: &std::path::Path, bin: &str) -> bool {
+    dir.join(bin).is_file()
+}
+
+#[cfg(test)]
+mod tests_deployer {
+    use super::*;
+
+    fn sandbox(nome: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("upd-dep-{nome}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// **A regra que este teste existe para travar:** sem o Deployer instalado, o `update`
+    /// NÃO o traz. Se alguém trocar a condição por `true` "pra facilitar", o updater passa a
+    /// instalar software que ninguém pediu — e um updater assim é um updater de que se
+    /// desconfia, o que contamina as atualizações que importam.
+    #[test]
+    fn nao_instala_deployer_em_quem_nao_o_tem() {
+        let d = sandbox("ausente");
+        assert!(!deve_reconstruir_deployer(&d, "deployer"), "atualizar não pode INSTALAR app novo");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Quem já tem, mantém em dia — que é o outro lado da mesma regra.
+    #[test]
+    fn mantem_em_dia_quem_ja_o_tem() {
+        let d = sandbox("presente");
+        std::fs::write(d.join("deployer"), b"#!/bin/sh\n").unwrap();
+        assert!(deve_reconstruir_deployer(&d, "deployer"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Diretório com OUTROS binários da casa, mas sem o deployer, continua sendo "não tem".
+    /// Sem esta asserção, um `read_dir().next().is_some()` passaria nos dois testes acima.
+    #[test]
+    fn outros_binarios_nao_contam_como_deployer() {
+        let d = sandbox("outros");
+        for b in ["schematize", "schematize-gui", "schematize-updater"] {
+            std::fs::write(d.join(b), b"x").unwrap();
+        }
+        assert!(!deve_reconstruir_deployer(&d, "deployer"));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

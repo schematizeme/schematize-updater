@@ -16,6 +16,13 @@ pub const GUI_REPO: &str = "schematizeme/schematize_gui_slint";
 /// qualquer correção nele (inclusive nas de atualizar) nunca chega em máquina nenhuma.
 pub const UPDATER_REPO: &str = "schematizeme/schematize-updater";
 pub const UPDATER_GUI_REPO: &str = "schematizeme/schematize-updater-gui";
+/// O app de SSH/VPS, separado do schematize pelo ADR-0010.
+///
+/// **OPCIONAL, e a opcionalidade é a regra:** o updater só o reconstrói se ele **já estiver
+/// instalado**. Quem nunca pediu o Deployer não passa a tê-lo porque atualizou o schematize
+/// — atualizar não instala app novo, e um `update` que traz software que ninguém pediu é
+/// exatamente o tipo de surpresa que faz a pessoa desconfiar do updater inteiro.
+pub const DEPLOYER_REPO: &str = "schematizeme/schematize_deployer_rs";
 
 /// Sistema operacional em execução. (Variantes "não construídas" no target atual são normais —
 /// o `os()` só constrói a do SO compilado; as outras existem pro código cross-OS.)
@@ -157,6 +164,11 @@ pub fn bin_names_interregno() -> (String, String) {
 /// Nome do binário da GUI do updater (com sufixo `.exe` no Windows).
 pub fn updater_gui_bin() -> String {
     format!("schematize-updater-gui{}", exe_suffix())
+}
+
+/// Nome do binário do Deployer (com sufixo `.exe` no Windows).
+pub fn deployer_bin() -> String {
+    format!("deployer{}", exe_suffix())
 }
 
 /// Nome do binário DESTE programa (com `.exe` no Windows).
