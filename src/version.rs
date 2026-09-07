@@ -143,3 +143,69 @@ pub fn installed_version_of(bin: &std::path::Path) -> Option<String> {
         .map(|s| s.to_string())
         .filter(|s| s.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false))
 }
+
+/// **O quê:** interpreta o que a pessoa digitou em `pin <x>`.
+///
+/// **Onde:** o comando `pin` do `main.rs`. Função PURA — decide, não escreve.
+///
+/// **Por que existe:** `pin latest` gravava a string `"latest"` no arquivo. O
+/// [`target_version`] é `read_pin().or_else(latest_app_version)`, então o alvo passava a ser
+/// literalmente `"latest"` — e o updater tentava baixar `releases/download/vlatest`, que não
+/// existe. Silenciosamente, e só na próxima atualização.
+///
+/// E `latest` é **a palavra que a pessoa naturalmente digita** para desafixar: o `status`
+/// mostra "seguindo latest", então `pin latest` parece a forma de voltar a isso. Havia um
+/// `unpin`, mas ninguém adivinha um comando que não errou. §37.48: edge case que um leigo
+/// atinge é bug do software, não erro de quem digitou.
+pub fn interpretar_pin(entrada: &str) -> Result<Option<String>, String> {
+    let v = entrada.trim();
+    // As palavras que significam "volte a seguir a última" — todas desafixam.
+    if v.is_empty() || matches!(v.to_lowercase().as_str(), "latest" | "none" | "nenhum" | "-") {
+        return Ok(None);
+    }
+    // Tolera o `v` da tag: quem copia de um release cola `v0.57.0`.
+    let limpo = v.strip_prefix('v').unwrap_or(v);
+    if !limpo.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        return Err(format!(
+            "`{v}` não parece uma versão. Use algo como `0.57.0`, \
+             ou `pin latest` para voltar a seguir a última publicada"
+        ));
+    }
+    Ok(Some(limpo.to_string()))
+}
+
+#[cfg(test)]
+mod tests_pin {
+    use super::*;
+
+    /// **O bug que esta função existe para não repetir:** `pin latest` gravava a string
+    /// "latest" como se fosse número de versão, e o alvo virava `vlatest`.
+    #[test]
+    fn latest_desafixa_em_vez_de_virar_versao() {
+        assert_eq!(interpretar_pin("latest").unwrap(), None);
+        assert_eq!(interpretar_pin("LATEST").unwrap(), None);
+        assert_eq!(interpretar_pin("  latest  ").unwrap(), None);
+        // Os outros jeitos de dizer a mesma coisa.
+        for x in ["", "none", "nenhum", "-"] {
+            assert_eq!(interpretar_pin(x).unwrap(), None, "{x:?} devia desafixar");
+        }
+    }
+
+    /// Versão de verdade passa — com ou sem o `v` que se copia de uma tag.
+    #[test]
+    fn versao_passa_com_ou_sem_o_v_da_tag() {
+        assert_eq!(interpretar_pin("0.57.0").unwrap(), Some("0.57.0".into()));
+        assert_eq!(interpretar_pin("v0.57.0").unwrap(), Some("0.57.0".into()), "o `v` da tag");
+    }
+
+    /// Qualquer outra coisa é RECUSADA com uma mensagem que ensina o formato — nunca gravada
+    /// para explodir depois, na próxima atualização.
+    #[test]
+    fn lixo_e_recusado_com_mensagem_acionavel() {
+        for x in ["abacaxi", "main", "HEAD", "--force"] {
+            let e = interpretar_pin(x).unwrap_err();
+            assert!(e.contains("0.57.0"), "a mensagem tem de dar o formato: {e}");
+            assert!(e.contains("pin latest"), "e a saída: {e}");
+        }
+    }
+}

@@ -42,8 +42,18 @@ fn main() {
         "run" | "launch" => platform::launch_app(),
         // Fixa uma versão do app (pin). `unpin` volta a seguir latest.
         "pin" => match rest.first() {
-            Some(v) => version::write_pin(Some(v)).map(|_| println!("versão fixada em {v}.")),
-            None => Err("uso: schematize-updater pin <versão>".into()),
+            Some(v) => version::interpretar_pin(v).and_then(|alvo| match alvo {
+                Some(ver) => {
+                    version::write_pin(Some(&ver)).map(|_| println!("versão fixada em {ver}."))
+                }
+                // `pin latest` (e sinônimos) DESAFIXA. Antes gravava a string literal e o
+                // alvo virava `vlatest` — quebrado, e só na próxima atualização.
+                None => version::write_pin(None)
+                    .map(|_| println!("pin removido — seguindo a última publicada.")),
+            }),
+            None => {
+                Err("uso: schematize-updater pin <versão>  (ou `pin latest` p/ desafixar)".into())
+            }
         },
         "unpin" => version::write_pin(None).map(|_| println!("pin removido — seguindo latest.")),
         other => {
@@ -103,6 +113,27 @@ fn print_status() {
         "última publicada   : {}",
         version::latest_app_version().map(|v| format!("v{v}")).unwrap_or_else(|| "? (rede)".into())
     );
+    // O DEPLOYER é outro app, com versão própria — e por isso tem linha própria aqui.
+    //
+    // Sem esta linha, quem roda `status` para ver "o que eu tenho e o que está disponível"
+    // simplesmente não enxerga o Deployer. Um gestor de versão que esconde metade do que
+    // gerencia manda a pessoa investigar por fora, que é o oposto de existir.
+    //
+    // Só aparece quando está instalado: anunciar um app que a pessoa não pediu, num comando
+    // de diagnóstico, seria propaganda no lugar errado.
+    let dep_bin = platform::install_dir().join(platform::deployer_bin());
+    if dep_bin.is_file() {
+        let inst = version::installed_version_of(&dep_bin);
+        let ult = version::latest_version_of(platform::DEPLOYER_REPO);
+        println!(
+            "deployer instalado : {}",
+            inst.map(|v| format!("v{v}")).unwrap_or_else(|| "presente, mas não responde".into())
+        );
+        println!(
+            "deployer publicado : {}",
+            ult.map(|v| format!("v{v}")).unwrap_or_else(|| "? (rede)".into())
+        );
+    }
     if let Some(p) = version::read_pin() {
         println!("versão fixada (pin): {p}");
     }
