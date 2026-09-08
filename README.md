@@ -1,4 +1,44 @@
-# schematize-updater
+# schematize-updater — APOSENTADO
+
+> ## ⚠ Este repositório está ARQUIVADO
+>
+> O `schematize-updater` foi **absorvido pelo [`schematize-market`](https://github.com/schematizeme/schematize_market_rs)**
+> em 2026-09-08, pelo [ADR-0013](https://github.com/schematizeme/schematize_app_archive/blob/main/decisoes/ADR-0013-market-dono-de-instalar-e-atualizar.md).
+> O market e hoje o unico responsavel por **instalar e atualizar** tudo do ecossistema.
+>
+> ### Para instalar ou atualizar, use:
+>
+> ```sh
+> # instalacao (primeira vez)
+> curl -fsSL https://raw.githubusercontent.com/schematizeme/schematize-cli/main/install.sh | bash
+>
+> # dia a dia
+> schematize-market update      # atualiza tudo
+> schematize-market status      # o que esta instalado, e o que ha de novo
+> schematize-market pin 0.62.0  # fixa uma versao; `pin latest` desafixa
+> ```
+>
+> Os verbos sao os MESMOS que eram aqui — quem tem o comando na mao troca so o nome do
+> programa. O pin gravado por este updater continua sendo lido pelo market, no mesmo
+> caminho e no mesmo formato: quem fixou uma versao nao a perde na migracao.
+>
+> ### Ja tem o binario antigo na maquina?
+>
+> Ele continua funcionando, mas **nao recebe mais correcao**, e ele responde — um
+> `schematize-updater update` numa maquina onde o market ja assumiu roda um gestor
+> congelado e desfaz o que o novo fez. O market e o `install.sh` o removem sozinhos ao
+> assumir, dizendo o que fizeram. Para tirar a mao: `rm ~/.cargo/bin/schematize-updater`.
+>
+> ### Por que o repositorio NAO foi deletado
+>
+> Porque o historico e a prova de como a casa chegou aqui. As 2.085 linhas daqui foram
+> **movidas** para o market (nao reescritas — ver o D4 do ADR-0013), e o `git log` deste
+> repo e o unico lugar onde se ve por que cada uma delas ficou daquele jeito. Um repo
+> deletado leva junto a resposta de "por que isso e assim".
+
+---
+
+## O que ele era (documentacao historica)
 
 Bootstrapper e gestor de versão do ecossistema **schematize** — instala e mantém o app
 (`schematize` CLI + `schematize-gui`) atualizado na máquina do usuário, **cross-OS**

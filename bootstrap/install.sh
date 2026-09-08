@@ -1,39 +1,39 @@
 #!/usr/bin/env bash
-# Bootstrap do schematize-updater (Linux/macOS) — baixa o binário do updater e roda `install`.
-# É a ÚNICA coisa que o usuário roda à mão; daí em diante o updater cuida de tudo (app CLI+GUI,
-# versão, toolchain quando precisar compilar). Uso:
-#   curl -fsSL https://raw.githubusercontent.com/schematizeme/schematize-updater/main/bootstrap/install.sh | bash
+# ---------------------------------------------------------------------------
+# Bootstrap do `schematize-updater` — APOSENTADO (ADR-0013).
+#
+# O QUE ESTE ARQUIVO FAZ HOJE: avisa que o updater deixou de existir e encaminha para o
+# sucessor. Ele NAO baixa mais binario nenhum.
+#
+# POR QUE ELE CONTINUA AQUI, EM VEZ DE SER APAGADO
+#
+# Este caminho e citado em documentacao, em historico de terminal e em bookmark de gente
+# que instalou a casa. Um `curl | bash` que devolve 404 nao diz nada: a pessoa conclui que
+# o projeto sumiu. Um que diz "o gestor agora e outro, o comando e este" custa cinco linhas
+# e resolve. Nome morto que se apaga e o que quebra (§37.48).
+#
+# POR QUE SAI 1 E NAO 0: quem chamou isto queria um gestor instalado, e ele NAO foi. Sair 0
+# faria um script automatizado seguir em frente achando que deu certo.
+# ---------------------------------------------------------------------------
 set -euo pipefail
 
-REPO="schematizeme/schematize-updater"
-DEST="${SCHEMATIZE_UPDATER_DIR:-$HOME/.local/bin}"
+cat >&2 <<'MSG'
+✗ o schematize-updater foi APOSENTADO.
 
-os="$(uname -s)"; arch="$(uname -m)"
-case "$os/$arch" in
-  Linux/x86_64)          asset="schematize-updater-linux-x86_64" ;;
-  Darwin/arm64)          asset="schematize-updater-macos-arm64" ;;
-  Darwin/x86_64)         asset="schematize-updater-macos-x86_64" ;;
-  *) echo "plataforma não suportada pelo bootstrap: $os/$arch — compile o updater do fonte (cargo build --release)"; exit 1 ;;
-esac
+  Ele foi absorvido pelo `schematize-market`, que agora e o unico responsavel por
+  INSTALAR e ATUALIZAR tudo do ecossistema (ADR-0013). Nada de novo passa por aqui.
 
-url="https://github.com/$REPO/releases/latest/download/$asset"
-mkdir -p "$DEST"
-bin="$DEST/schematize-updater"
-echo "→ baixando o schematize-updater ($asset)…"
-if ! curl -fsSL -o "$bin" "$url"; then
-  echo "não achei o binário pré-compilado do updater ($url)."
-  echo "Se você tem Rust: git clone https://github.com/$REPO && cd schematize-updater && cargo install --path ."
-  exit 1
-fi
-chmod +x "$bin"
+  O que rodar no lugar:
 
-# Garante ~/.local/bin no PATH (idempotente).
-case ":$PATH:" in *":$DEST:"*) : ;; *)
-  for rc in "$HOME/.bashrc" "$HOME/.profile" "$HOME/.zshrc"; do
-    [ -e "$rc" ] || continue
-    grep -q '.local/bin' "$rc" 2>/dev/null || printf '\n# schematize-updater\nexport PATH="%s:$PATH"\n' "$DEST" >> "$rc"
-  done ;;
-esac
+    curl -fsSL https://raw.githubusercontent.com/schematizeme/schematize-cli/main/install.sh | bash
 
-echo "→ instalando o app schematize (binário pronto se houver, senão compila do fonte)…"
-exec "$bin" install
+  Esse comando instala o schematize e o gestor. Depois disso, o dia a dia e:
+
+    schematize-market update      # atualiza tudo
+    schematize-market status      # o que esta instalado, e o que ha de novo
+    schematize-market list        # tudo que da pra instalar
+
+  Ja tem o updater antigo na maquina? Ele continua funcionando, mas nao recebe mais
+  correcao. O market o remove sozinho quando assume, e diz que fez isso.
+MSG
+exit 1
