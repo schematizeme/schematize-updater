@@ -6,20 +6,38 @@
 use crate::sh;
 use std::path::Path;
 
+/// Teto do corpo lido por [`get_text`] (2 MiB). O corpo vira `String` inteira em memória; o que
+/// se lê aqui é um `Cargo.toml` de poucos KiB, então qualquer coisa maior é resposta errada
+/// (página de erro, redirecionamento hostil) e não deve inflar o RSS do updater.
+const MAX_CORPO_TEXTO: &str = "2097152";
+
+/// Argumentos do `curl` de [`get_text`]. O quê: monta a linha com timeout curto e teto de corpo
+/// (`--max-filesize`); curl aborta com erro quando o corpo anunciado passa do teto.
+/// Onde: `get_text` (Unix e Windows com curl) e o teste que trava o teto.
+fn curl_text_args(url: &str) -> [&str; 8] {
+    [
+        "-fsSL",
+        "-m",
+        "20",
+        "--max-filesize",
+        MAX_CORPO_TEXTO,
+        "-H",
+        "User-Agent: schematize-updater",
+        url,
+    ]
+}
+
 /// Lê o corpo de `url` como texto. `None` se falhar (rede/HTTP>=400). Timeout curto.
 pub fn get_text(url: &str) -> Option<String> {
     #[cfg(not(windows))]
     {
-        sh::capture("curl", &["-fsSL", "-m", "20", "-H", "User-Agent: schematize-updater", url])
+        sh::capture("curl", &curl_text_args(url))
     }
     #[cfg(windows)]
     {
         if sh::has("curl.exe") || sh::has("curl") {
             let c = if sh::has("curl.exe") { "curl.exe" } else { "curl" };
-            return sh::capture(
-                c,
-                &["-fsSL", "-m", "20", "-H", "User-Agent: schematize-updater", url],
-            );
+            return sh::capture(c, &curl_text_args(url));
         }
         // Fallback: PowerShell Invoke-WebRequest.
         let ps = format!(
@@ -80,5 +98,21 @@ pub fn url_ok(url: &str) -> bool {
             .unwrap_or(false);
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// O quê: trava que o teto de corpo e o timeout continuam na linha do curl (regressão de
+    /// memória: sem `--max-filesize` um servidor hostil enche a RAM do updater).
+    #[test]
+    fn curl_de_texto_leva_teto_e_timeout() {
+        let a = curl_text_args("https://x.test/Cargo.toml");
+        let i = a.iter().position(|x| *x == "--max-filesize").expect("sem --max-filesize");
+        assert_eq!(a[i + 1], "2097152");
+        assert!(a.contains(&"-m"));
+        assert_eq!(a[a.len() - 1], "https://x.test/Cargo.toml");
     }
 }
